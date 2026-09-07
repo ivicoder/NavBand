@@ -11,14 +11,30 @@ class NavigationNotificationListener : NotificationListenerService() {
         private const val PREFS = "navband_debug"
         private const val KEY_DEBUG = "notification_debug"
 
+        private const val MAPS_PACKAGE =
+            "com.google.android.apps.maps"
+
         fun getDebug(context: Context): String {
             return context
                 .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getString(KEY_DEBUG, "Nessuna notifica ricevuta.") ?: ""
+                .getString(
+                    KEY_DEBUG,
+                    "Nessuna notifica ricevuta."
+                ) ?: ""
         }
     }
 
-    override fun onNotificationPosted(sbn: StatusBarNotification?) {
+    private lateinit var forwarder: NotificationForwarder
+
+    override fun onCreate() {
+        super.onCreate()
+
+        forwarder = NotificationForwarder(this)
+    }
+
+    override fun onNotificationPosted(
+        sbn: StatusBarNotification?
+    ) {
         super.onNotificationPosted(sbn)
 
         if (sbn == null) return
@@ -29,13 +45,29 @@ class NavigationNotificationListener : NotificationListenerService() {
         val packageName = sbn.packageName
 
         val title =
-            extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
+            extras
+                .getCharSequence(
+                    Notification.EXTRA_TITLE
+                )
+                ?.toString()
 
         val text =
-            extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+            extras
+                .getCharSequence(
+                    Notification.EXTRA_TEXT
+                )
+                ?.toString()
 
         val subText =
-            extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
+            extras
+                .getCharSequence(
+                    Notification.EXTRA_SUB_TEXT
+                )
+                ?.toString()
+
+        /*
+         * DEBUG
+         */
 
         val result = StringBuilder()
 
@@ -74,17 +106,48 @@ class NavigationNotificationListener : NotificationListenerService() {
                 }
 
                 result.append("\n")
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 result.append("\n")
                 result.append(key)
                 result.append("\n<errore lettura>\n")
             }
         }
 
-        getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        getSharedPreferences(
+            PREFS,
+            Context.MODE_PRIVATE
+        )
             .edit()
-            .putString(KEY_DEBUG, result.toString())
+            .putString(
+                KEY_DEBUG,
+                result.toString()
+            )
             .apply()
+
+        /*
+         * ELABORAZIONE NAVIGAZIONE
+         *
+         * Per ora elaboriamo esclusivamente
+         * le notifiche provenienti da Google Maps.
+         */
+
+        if (packageName != MAPS_PACKAGE) {
+            return
+        }
+
+        val image =
+            ImageExtractor.extract(notification)
+
+        val event =
+            NavigationParser.parse(
+                title = title,
+                text = text,
+                subText = subText,
+                image = image
+            )
+            ?: return
+
+        forwarder.send(event)
     }
 
     override fun onNotificationRemoved(
