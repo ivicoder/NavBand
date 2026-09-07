@@ -3,49 +3,48 @@ package com.navband.app
 import android.app.Notification
 import android.graphics.Bitmap
 import android.os.Build
+import android.os.Bundle
 
 object ImageExtractor {
 
-    fun extract(
-        notification: Notification
-    ): Bitmap? {
+    fun extract(notification: Notification): Bitmap? {
+        val extras: Bundle = notification.extras ?: return null
 
-        val extras =
-            notification.extras ?: return null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
 
-        if (Build.VERSION.SDK_INT >= 33) {
-
-            extras.getParcelable(
+            val picture = extras.getParcelable(
                 Notification.EXTRA_PICTURE,
                 Bitmap::class.java
-            )?.let {
-                return it
+            )
+
+            if (picture != null) {
+                return picture
             }
 
-            extras.getParcelable(
+            val icon = extras.getParcelable(
                 Notification.EXTRA_LARGE_ICON,
                 Bitmap::class.java
-            )?.let {
-                return it
+            )
+
+            if (icon != null) {
+                return icon
             }
 
         } else {
 
             @Suppress("DEPRECATION")
-            val picture =
-                extras.getParcelable(
-                    Notification.EXTRA_PICTURE
-                )
+            val picture = extras.getParcelable(
+                Notification.EXTRA_PICTURE
+            )
 
             if (picture is Bitmap) {
                 return picture
             }
 
             @Suppress("DEPRECATION")
-            val icon =
-                extras.getParcelable(
-                    Notification.EXTRA_LARGE_ICON
-                )
+            val icon = extras.getParcelable(
+                Notification.EXTRA_LARGE_ICON
+            )
 
             if (icon is Bitmap) {
                 return icon
