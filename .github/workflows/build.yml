@@ -10,13 +10,10 @@ permissions:
   contents: read
 
 jobs:
-
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -35,10 +32,11 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build debug APK
+        working-directory: NavBand
         run: gradle assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: NavBand-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: NavBand/app/build/outputs/apk/debug/app-debug.apk
