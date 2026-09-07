@@ -1,14 +1,21 @@
 package com.navband.app
 
 import android.app.Notification
+import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import android.util.Log
 
 class NavigationNotificationListener : NotificationListenerService() {
 
     companion object {
-        private const val TAG = "NavBandDebug"
+        private const val PREFS = "navband_debug"
+        private const val KEY_DEBUG = "notification_debug"
+
+        fun getDebug(context: Context): String {
+            return context
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_DEBUG, "Nessuna notifica ricevuta.") ?: ""
+        }
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
@@ -30,31 +37,54 @@ class NavigationNotificationListener : NotificationListenerService() {
         val subText =
             extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
 
-        Log.d(TAG, "================================")
-        Log.d(TAG, "NOTIFICA RICEVUTA")
-        Log.d(TAG, "package = $packageName")
-        Log.d(TAG, "title = $title")
-        Log.d(TAG, "text = $text")
-        Log.d(TAG, "subText = $subText")
-        Log.d(TAG, "extras = ${extras.keySet()}")
+        val result = StringBuilder()
+
+        result.append("PACKAGE\n")
+        result.append(packageName)
+        result.append("\n\n")
+
+        result.append("TITLE\n")
+        result.append(title ?: "null")
+        result.append("\n\n")
+
+        result.append("TEXT\n")
+        result.append(text ?: "null")
+        result.append("\n\n")
+
+        result.append("SUBTEXT\n")
+        result.append(subText ?: "null")
+        result.append("\n\n")
+
+        result.append("EXTRAS\n")
 
         for (key in extras.keySet()) {
             try {
                 val value = extras.get(key)
 
-                Log.d(
-                    TAG,
-                    "EXTRA [$key] = ${value?.javaClass?.name} : $value"
-                )
+                result.append("\n")
+                result.append(key)
+                result.append("\n")
+
+                if (value == null) {
+                    result.append("null")
+                } else {
+                    result.append(value.javaClass.name)
+                    result.append("\n")
+                    result.append(value.toString())
+                }
+
+                result.append("\n")
             } catch (e: Exception) {
-                Log.d(
-                    TAG,
-                    "EXTRA [$key] = <errore lettura: ${e.message}>"
-                )
+                result.append("\n")
+                result.append(key)
+                result.append("\n<errore lettura>\n")
             }
         }
 
-        Log.d(TAG, "================================")
+        getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_DEBUG, result.toString())
+            .apply()
     }
 
     override fun onNotificationRemoved(
