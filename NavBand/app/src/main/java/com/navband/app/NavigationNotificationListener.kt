@@ -8,15 +8,21 @@ import android.service.notification.StatusBarNotification
 class NavigationNotificationListener : NotificationListenerService() {
 
     companion object {
+
         private const val PREFS = "navband_debug"
-        private const val KEY_DEBUG = "notification_debug"
+
+        private const val KEY_DEBUG =
+            "notification_debug"
 
         private const val MAPS_PACKAGE =
             "com.google.android.apps.maps"
 
         fun getDebug(context: Context): String {
             return context
-                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getSharedPreferences(
+                    PREFS,
+                    Context.MODE_PRIVATE
+                )
                 .getString(
                     KEY_DEBUG,
                     "Nessuna notifica ricevuta."
@@ -29,7 +35,8 @@ class NavigationNotificationListener : NotificationListenerService() {
     override fun onCreate() {
         super.onCreate()
 
-        forwarder = NotificationForwarder(this)
+        forwarder =
+            NotificationForwarder(this)
     }
 
     override fun onNotificationPosted(
@@ -39,10 +46,14 @@ class NavigationNotificationListener : NotificationListenerService() {
 
         if (sbn == null) return
 
-        val notification = sbn.notification
-        val extras = notification.extras ?: return
+        val notification =
+            sbn.notification
 
-        val packageName = sbn.packageName
+        val extras =
+            notification.extras ?: return
+
+        val packageName =
+            sbn.packageName
 
         val title =
             extras
@@ -69,7 +80,8 @@ class NavigationNotificationListener : NotificationListenerService() {
          * DEBUG
          */
 
-        val result = StringBuilder()
+        val result =
+            StringBuilder()
 
         result.append("PACKAGE\n")
         result.append(packageName)
@@ -90,26 +102,42 @@ class NavigationNotificationListener : NotificationListenerService() {
         result.append("EXTRAS\n")
 
         for (key in extras.keySet()) {
+
             try {
-                val value = extras.get(key)
+
+                val value =
+                    extras.get(key)
 
                 result.append("\n")
                 result.append(key)
                 result.append("\n")
 
                 if (value == null) {
+
                     result.append("null")
+
                 } else {
-                    result.append(value.javaClass.name)
+
+                    result.append(
+                        value.javaClass.name
+                    )
+
                     result.append("\n")
-                    result.append(value.toString())
+
+                    result.append(
+                        value.toString()
+                    )
                 }
 
                 result.append("\n")
+
             } catch (_: Exception) {
+
                 result.append("\n")
                 result.append(key)
-                result.append("\n<errore lettura>\n")
+                result.append(
+                    "\n<errore lettura>\n"
+                )
             }
         }
 
@@ -135,8 +163,21 @@ class NavigationNotificationListener : NotificationListenerService() {
             return
         }
 
+        /*
+         * ESTRAZIONE IMMAGINE
+         *
+         * Google Maps fornisce la freccia
+         * dentro android.largeIcon come Icon.
+         *
+         * ImageExtractor converte l'Icon
+         * in Bitmap.
+         */
+
         val image =
-            ImageExtractor.extract(notification)
+            ImageExtractor.extract(
+                context = this,
+                notification = notification
+            )
 
         val event =
             NavigationParser.parse(
@@ -144,8 +185,7 @@ class NavigationNotificationListener : NotificationListenerService() {
                 text = text,
                 subText = subText,
                 image = image
-            )
-            ?: return
+            ) ?: return
 
         forwarder.send(event)
     }
