@@ -1,58 +1,65 @@
 package com.navband.app
 
+import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.util.Log
 
 class NavigationNotificationListener : NotificationListenerService() {
 
-    private lateinit var forwarder: NotificationForwarder
-
-    override fun onCreate() {
-        super.onCreate()
-        forwarder = NotificationForwarder(this)
+    companion object {
+        private const val TAG = "NavBandDebug"
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
 
-        if (sbn == null) {
-            return
-        }
+        if (sbn == null) return
 
-        // Evita di elaborare le notifiche generate da NavBand stessa.
-        if (sbn.packageName == packageName) {
-            return
-        }
-
-        val notification = sbn.notification ?: return
+        val notification = sbn.notification
         val extras = notification.extras ?: return
 
-        val title = extras.getCharSequence("android.title")?.toString()
-        val text = extras.getCharSequence("android.text")?.toString()
-        val subText = extras.getCharSequence("android.subText")?.toString()
+        val packageName = sbn.packageName
 
-        val image = ImageExtractor.extract(notification)
+        val title =
+            extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
 
-        val event = NavigationParser.parse(
-            title = title,
-            text = text,
-            subText = subText,
-            image = image
-        ) ?: return
+        val text =
+            extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
 
-        // Ignora notifiche che non sembrano contenere
-        // informazioni di navigazione.
-        if (event.direction == NavigationDirection.UNKNOWN &&
-            event.distance.isBlank() &&
-            event.instruction.isBlank()
-        ) {
-            return
+        val subText =
+            extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
+
+        Log.d(TAG, "================================")
+        Log.d(TAG, "NOTIFICA RICEVUTA")
+        Log.d(TAG, "package = $packageName")
+        Log.d(TAG, "title = $title")
+        Log.d(TAG, "text = $text")
+        Log.d(TAG, "subText = $subText")
+        Log.d(TAG, "extras = ${extras.keySet()}")
+
+        for (key in extras.keySet()) {
+            try {
+                val value = extras.get(key)
+
+                Log.d(
+                    TAG,
+                    "EXTRA [$key] = ${value?.javaClass?.name} : $value"
+                )
+            } catch (e: Exception) {
+                Log.d(
+                    TAG,
+                    "EXTRA [$key] = <errore lettura: ${e.message}>"
+                )
+            }
         }
 
-        forwarder.send(event)
+        Log.d(TAG, "================================")
     }
 
-    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+    override fun onNotificationRemoved(
+        sbn: StatusBarNotification?
+    ) {
         super.onNotificationRemoved(sbn)
     }
 }
