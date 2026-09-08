@@ -7,10 +7,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import android.graphics.BitmapFactory
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
@@ -52,6 +57,37 @@ class MainActivity : ComponentActivity() {
                             }
                         ) {
                             Text("Aggiorna debug")
+                        }
+
+                        val debugImage =
+                            try {
+                                openFileInput(
+                                    "debug_navigation_image.png"
+                                ).use { input ->
+                                    BitmapFactory.decodeStream(input)
+                                }
+                            } catch (_: Exception) {
+                                null
+                            }
+
+                        if (debugImage != null) {
+                            Text(
+                                text = "IMMAGINE ESTRATTA",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+
+                            Image(
+                                bitmap = debugImage.asImageBitmap(),
+                                contentDescription = "Immagine estratta da Google Maps",
+                                modifier = Modifier
+                                    .background(Color.Black)
+                                    .padding(10.dp)
+                            )
+                        } else {
+                            Text(
+                                text = "Nessuna immagine estratta",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                         }
 
                         Text(

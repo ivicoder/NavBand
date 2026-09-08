@@ -103,6 +103,27 @@ class NavigationNotificationListener : NotificationListenerService() {
             )
 
         /*
+         * Salva temporaneamente la Bitmap estratta
+         * per poterla visualizzare nella schermata debug.
+         */
+
+        if (image != null) {
+            try {
+                openFileOutput(
+                    "debug_navigation_image.png",
+                    Context.MODE_PRIVATE
+                ).use { output ->
+                    image.compress(
+                        android.graphics.Bitmap.CompressFormat.PNG,
+                        100,
+                        output
+                    )
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        /*
          * DEBUG
          */
 
