@@ -17,6 +17,7 @@ data class NavigationEvent(
     val direction: NavigationDirection,
     val distance: String = "",
     val instruction: String = "",
+    val subText: String = "",
     val roundaboutExit: Int? = null,
     val image: Bitmap? = null
 )

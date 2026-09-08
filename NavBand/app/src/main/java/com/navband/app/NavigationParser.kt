@@ -32,15 +32,28 @@ object NavigationParser {
         image: Bitmap? = null
     ): NavigationEvent? {
 
+        val instruction =
+            text?.trim()
+                ?: title?.trim()
+                ?: ""
+
+        if (
+            instruction.isBlank() &&
+            subText.isNullOrBlank() &&
+            title.isNullOrBlank()
+        ) {
+            return null
+        }
+
         val source =
-            listOf(title, text, subText)
+            listOf(
+                title,
+                text,
+                subText
+            )
                 .filterNotNull()
                 .joinToString(" ")
                 .trim()
-
-        if (source.isBlank()) {
-            return null
-        }
 
         val normalized =
             source
@@ -139,7 +152,8 @@ object NavigationParser {
         return NavigationEvent(
             direction = direction,
             distance = distance,
-            instruction = source,
+            instruction = instruction,
+            subText = subText ?: "",
             roundaboutExit = exit,
             image = image
         )

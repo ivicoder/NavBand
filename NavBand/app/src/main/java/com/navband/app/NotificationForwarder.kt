@@ -80,30 +80,51 @@ class NotificationForwarder(
                 "Navigazione"
             }
 
+        /*
+         * Prima riga: distanza.
+         */
+        val distanceText =
+            event.distance.ifBlank {
+                arrow
+            }
+
+        /*
+         * Seconda riga: istruzione / strada.
+         */
+        val instructionText =
+            event.instruction
+
+        /*
+         * Terza riga: subText originale di Google Maps.
+         */
+        val subText =
+            event.subText
+
+        /*
+         * Costruiamo il testo mantenendo
+         * distance, instruction e subText
+         * su righe separate.
+         */
         val text =
             buildString {
 
-                if (event.distance.isNotBlank()) {
-                    append(event.distance)
+                append(distanceText)
+
+                if (instructionText.isNotBlank()) {
+                    append("\n")
+                    append(instructionText)
                 }
 
-                if (event.instruction.isNotBlank()) {
-                    if (isNotEmpty()) {
-                        append("\n")
-                    }
-
-                    append(event.instruction)
-                }
-
-                if (isEmpty()) {
-                    append(arrow)
+                if (subText.isNotBlank()) {
+                    append("\n")
+                    append(subText)
                 }
             }
 
         /*
          * Layout personalizzato della notifica.
          *
-         * La freccia di Google Maps viene inserita
+         * La Bitmap di Google Maps viene inserita
          * direttamente nella ImageView.
          */
         val remoteViews =
@@ -135,9 +156,8 @@ class NotificationForwarder(
         } else {
 
             /*
-             * Se Google Maps non fornisce un'immagine,
-             * utilizziamo comunque la freccia testuale
-             * come fallback.
+             * Fallback testuale se Google Maps
+             * non fornisce una Bitmap.
              */
             remoteViews.setTextViewText(
                 R.id.notification_navigation_text,
@@ -172,13 +192,9 @@ class NotificationForwarder(
                 )
 
         /*
-         * IMPORTANTE:
-         *
-         * Non utilizziamo setLargeIcon().
-         * La Bitmap viene inserita direttamente
-         * nella ImageView della RemoteViews.
+         * La Bitmap non viene utilizzata come LargeIcon.
+         * Rimane nella ImageView della RemoteViews.
          */
-
         manager.notify(
             NOTIFICATION_ID,
             builder.build()
