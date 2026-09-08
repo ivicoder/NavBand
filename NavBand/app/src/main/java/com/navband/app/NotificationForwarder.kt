@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
+import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 
 class NotificationForwarder(
@@ -82,22 +83,67 @@ class NotificationForwarder(
         val text =
             buildString {
 
-                append(arrow)
-
-                if (
-                    event.distance.isNotBlank()
-                ) {
-                    append("   ")
+                if (event.distance.isNotBlank()) {
                     append(event.distance)
                 }
 
-                if (
-                    event.instruction.isNotBlank()
-                ) {
-                    append("\n")
+                if (event.instruction.isNotBlank()) {
+                    if (isNotEmpty()) {
+                        append("\n")
+                    }
+
                     append(event.instruction)
                 }
+
+                if (isEmpty()) {
+                    append(arrow)
+                }
             }
+
+        /*
+         * Layout personalizzato della notifica.
+         *
+         * La freccia di Google Maps viene inserita
+         * direttamente nella ImageView.
+         */
+        val remoteViews =
+            RemoteViews(
+                context.packageName,
+                R.layout.notification_navigation
+            )
+
+        remoteViews.setTextViewText(
+            R.id.notification_navigation_title,
+            title
+        )
+
+        remoteViews.setTextViewText(
+            R.id.notification_navigation_text,
+            text
+        )
+
+        val image: Bitmap? =
+            event.image
+
+        if (image != null) {
+
+            remoteViews.setImageViewBitmap(
+                R.id.notification_navigation_image,
+                image
+            )
+
+        } else {
+
+            /*
+             * Se Google Maps non fornisce un'immagine,
+             * utilizziamo comunque la freccia testuale
+             * come fallback.
+             */
+            remoteViews.setTextViewText(
+                R.id.notification_navigation_text,
+                "$arrow  $text"
+            )
+        }
 
         val builder =
             NotificationCompat
@@ -110,28 +156,28 @@ class NotificationForwarder(
                 )
                 .setContentTitle(title)
                 .setContentText(text)
-                .setStyle(
-                    NotificationCompat
-                        .BigTextStyle()
-                        .bigText(text)
+                .setCustomContentView(
+                    remoteViews
+                )
+                .setCustomBigContentView(
+                    remoteViews
                 )
                 .setPriority(
-                    NotificationCompat
-                        .PRIORITY_LOW
+                    NotificationCompat.PRIORITY_LOW
                 )
                 .setOnlyAlertOnce(true)
                 .setAutoCancel(false)
                 .setCategory(
-                    NotificationCompat
-                        .CATEGORY_NAVIGATION
+                    NotificationCompat.CATEGORY_NAVIGATION
                 )
 
-        val image: Bitmap? =
-            event.image
-
-        if (image != null) {
-            builder.setLargeIcon(image)
-        }
+        /*
+         * IMPORTANTE:
+         *
+         * Non utilizziamo setLargeIcon().
+         * La Bitmap viene inserita direttamente
+         * nella ImageView della RemoteViews.
+         */
 
         manager.notify(
             NOTIFICATION_ID,
