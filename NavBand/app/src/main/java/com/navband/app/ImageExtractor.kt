@@ -7,12 +7,15 @@ import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 
 object ImageExtractor {
+
+    private const val TAG = "NavBandImage"
 
     fun extract(
         context: Context,
@@ -67,12 +70,23 @@ object ImageExtractor {
                         )
 
                     if (bitmap != null) {
+                        Log.d(
+                            TAG,
+                            "RemoteViews SUCCESS: ${bitmap.width}x${bitmap.height}"
+                        )
                         return bitmap
+                    } else {
+                        Log.d(TAG, "RemoteViews: no matching ImageView found")
                     }
                 }
             }
 
-        } catch (_: Throwable) {
+        } catch (e: Throwable) {
+            Log.e(
+                TAG,
+                "RemoteViews extraction FAILED",
+                e
+            )
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -91,7 +105,20 @@ object ImageExtractor {
                         icon.loadDrawable(context)
 
                     if (drawable != null) {
-                        return drawableToBitmap(drawable)
+                        val bitmap = drawableToBitmap(drawable)
+
+                        if (bitmap != null) {
+                            Log.d(
+                                TAG,
+                                "LARGE_ICON SUCCESS: ${bitmap.width}x${bitmap.height}"
+                            )
+                        } else {
+                            Log.d(TAG, "LARGE_ICON drawable -> bitmap FAILED")
+                        }
+
+                        return bitmap
+                    } else {
+                        Log.d(TAG, "LARGE_ICON loadDrawable returned null")
                     }
                 }
 
@@ -108,12 +135,27 @@ object ImageExtractor {
                 )
 
             if (picture is Bitmap) {
+                Log.d(
+                    TAG,
+                    "PICTURE SUCCESS: ${picture.width}x${picture.height}"
+                )
                 return picture
+            } else {
+                Log.d(
+                    TAG,
+                    "PICTURE not available"
+                )
             }
 
-        } catch (_: Throwable) {
+        } catch (e: Throwable) {
+            Log.e(
+                TAG,
+                "PICTURE extraction FAILED",
+                e
+            )
         }
 
+        Log.d(TAG, "EXTRACT RESULT: NULL")
         return null
     }
 

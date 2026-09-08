@@ -52,7 +52,6 @@ class NavigationNotificationListener : NotificationListenerService() {
         val packageName =
             sbn.packageName
 
-        // Ignora le notifiche generate da NavBand.
         if (packageName == NAVBAND_PACKAGE) {
             return
         }
@@ -85,6 +84,25 @@ class NavigationNotificationListener : NotificationListenerService() {
                 ?.toString()
 
         /*
+         * Elaboriamo soltanto le notifiche
+         * provenienti da Google Maps.
+         */
+
+        if (packageName != MAPS_PACKAGE) {
+            return
+        }
+
+        /*
+         * IMAGE EXTRACTION
+         */
+
+        val image =
+            ImageExtractor.extract(
+                context = this,
+                notification = notification
+            )
+
+        /*
          * DEBUG
          */
 
@@ -105,6 +123,27 @@ class NavigationNotificationListener : NotificationListenerService() {
 
         result.append("SUBTEXT\n")
         result.append(subText ?: "null")
+        result.append("\n\n")
+
+        result.append("IMAGE DEBUG\n")
+
+        if (image != null) {
+
+            result.append("ImageExtractor result: PRESENT\n")
+            result.append("Bitmap size: ")
+            result.append(image.width)
+            result.append(" x ")
+            result.append(image.height)
+            result.append("\n")
+
+            result.append("Bitmap config: ")
+            result.append(image.config)
+
+        } else {
+
+            result.append("ImageExtractor result: NULL")
+        }
+
         result.append("\n\n")
 
         result.append("EXTRAS\n")
@@ -159,19 +198,8 @@ class NavigationNotificationListener : NotificationListenerService() {
             .apply()
 
         /*
-         * Elaboriamo soltanto le notifiche
-         * provenienti da Google Maps.
+         * PARSER
          */
-
-        if (packageName != MAPS_PACKAGE) {
-            return
-        }
-
-        val image =
-            ImageExtractor.extract(
-                context = this,
-                notification = notification
-            )
 
         val event =
             NavigationParser.parse(
