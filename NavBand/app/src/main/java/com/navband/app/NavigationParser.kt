@@ -22,7 +22,7 @@ object NavigationParser {
 
     private val ordinalExitRegex =
         Regex(
-            """(?i)\b(prima|seconda|terza|quarta|quinta|sesta|settima|ottava)\s+(?:uscita|exit)\b"""
+            """(?i)\b(prima|seconda|terza|quarta|quinta|sesta|settima|ottava|nona|decima)\s+(?:uscita|exit)\b"""
         )
 
     fun parse(
@@ -45,6 +45,11 @@ object NavigationParser {
             return null
         }
 
+        /*
+         * Uniamo tutti i campi perché Google Maps
+         * può distribuire le informazioni tra title,
+         * text e subText.
+         */
         val source =
             listOf(
                 title,
@@ -60,6 +65,7 @@ object NavigationParser {
                 .lowercase(Locale.ITALIAN)
                 .replace("’", "'")
                 .replace("º", "°")
+                .replace(Regex("\\s+"), " ")
 
         val distance =
             distanceRegex
@@ -70,6 +76,14 @@ object NavigationParser {
         val exit =
             findExit(normalized)
 
+        /*
+         * La rotatoria ha priorità assoluta.
+         *
+         * Se troviamo "rotatoria", "rotonda" o
+         * "roundabout", l'evento viene classificato
+         * come ROUNDABOUT anche se nel testo compare
+         * una parola come "destra" o "sinistra".
+         */
         val isRoundabout =
             containsAny(
                 normalized,
@@ -87,61 +101,116 @@ object NavigationParser {
                 isRoundabout ->
                     NavigationDirection.ROUNDABOUT
 
+                /*
+                 * INVERSIONE
+                 */
                 containsAny(
                     normalized,
                     "inversione a u",
+                    "inversione a u",
+                    "fai inversione",
+                    "fai un'inversione",
+                    "fai una inversione",
                     "inversione",
                     "u-turn",
                     "u turn",
-                    "fai inversione"
+                    "u turn"
                 ) ->
                     NavigationDirection.U_TURN
 
+                /*
+                 * LEGGERA SINISTRA
+                 *
+                 * Deve essere controllata PRIMA di
+                 * "a sinistra", altrimenti verrebbe
+                 * classificata come LEFT.
+                 */
+                containsAny(
+                    normalized,
+                    "leggermente a sinistra",
+                    "leggera sinistra",
+                    "leggero sinistra",
+                    "mantieni la sinistra",
+                    "tieni la sinistra",
+                    "mantieni a sinistra",
+                    "tieni a sinistra",
+                    "leggermente verso sinistra",
+                    "slight left",
+                    "slightly left",
+                    "keep left",
+                    "keep to the left"
+                ) ->
+                    NavigationDirection.SLIGHT_LEFT
+
+                /*
+                 * LEGGERA DESTRA
+                 */
+                containsAny(
+                    normalized,
+                    "leggermente a destra",
+                    "leggera destra",
+                    "leggero destra",
+                    "mantieni la destra",
+                    "tieni la destra",
+                    "mantieni a destra",
+                    "tieni a destra",
+                    "leggermente verso destra",
+                    "slight right",
+                    "slightly right",
+                    "keep right",
+                    "keep to the right"
+                ) ->
+                    NavigationDirection.SLIGHT_RIGHT
+
+                /*
+                 * SINISTRA
+                 */
                 containsAny(
                     normalized,
                     "svolta a sinistra",
+                    "svolta sinistra",
                     "gira a sinistra",
+                    "gira sinistra",
                     "turn left",
                     "left turn",
                     "a sinistra"
                 ) ->
                     NavigationDirection.LEFT
 
+                /*
+                 * DESTRA
+                 */
                 containsAny(
                     normalized,
                     "svolta a destra",
+                    "svolta destra",
                     "gira a destra",
+                    "gira destra",
                     "turn right",
                     "right turn",
                     "a destra"
                 ) ->
                     NavigationDirection.RIGHT
 
+                /*
+                 * DRITTO
+                 */
                 containsAny(
                     normalized,
-                    "leggermente a sinistra",
-                    "mantieni la sinistra",
-                    "tieni la sinistra",
-                    "slight left"
-                ) ->
-                    NavigationDirection.SLIGHT_LEFT
-
-                containsAny(
-                    normalized,
-                    "leggermente a destra",
-                    "mantieni la destra",
-                    "tieni la destra",
-                    "slight right"
-                ) ->
-                    NavigationDirection.SLIGHT_RIGHT
-
-                containsAny(
-                    normalized,
+                    "prosegui dritto",
                     "prosegui",
                     "continua dritto",
+                    "continua diritto",
                     "vai dritto",
+                    "vai diritto",
+                    "sempre dritto",
+                    "sempre diritto",
+                    "dritto",
+                    "diritto",
                     "straight",
-                    "keep straight"
+                    "go straight",
+                    "keep straight",
+                    "continue straight"
                 ) ->
                     NavigationDirection.STRAIGHT
 
@@ -163,6 +232,14 @@ object NavigationParser {
         text: String
     ): Int? {
 
+        /*
+         * Esempi:
+         *
+         * uscita 3
+         * uscita n. 3
+         * uscita numero 3
+         * exit 3
+         */
         numericExitRegex
             .find(text)
             ?.groupValues
@@ -172,6 +249,15 @@ object NavigationParser {
                 return it
             }
 
+        /*
+         * Esempi:
+         *
+         * 3ª uscita
+         * 3a uscita
+         * 3° uscita
+         * 3 uscita
+         * 3 exit
+         */
         reverseExitRegex
             .find(text)
             ?.groupValues
@@ -181,6 +267,14 @@ object NavigationParser {
                 return it
             }
 
+        /*
+         * Esempi:
+         *
+         * prima uscita
+         * seconda uscita
+         * terza uscita
+         * ...
+         */
         val ordinal =
             ordinalExitRegex
                 .find(text)
@@ -196,6 +290,8 @@ object NavigationParser {
             "sesta" -> 6
             "settima" -> 7
             "ottava" -> 8
+            "nona" -> 9
+            "decima" -> 10
             else -> null
         }
     }
