@@ -230,6 +230,22 @@ class NavigationNotificationListener : NotificationListenerService() {
                 image = image
             ) ?: return
 
+        /*
+         * VIBRATION
+         *
+         * La vibrazione viene generata direttamente
+         * dall'evento interpretato dal parser.
+         */
+
+        VibrationEngine.vibrate(
+            context = this,
+            event = event
+        )
+
+        /*
+         * FORWARDER
+         */
+
         forwarder.send(event)
     }
 
