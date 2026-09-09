@@ -252,15 +252,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun testNotification() {
-        val event =
-            NavigationEvent(
-                direction = NavigationDirection.LEFT,
-                distance = "200 m",
-                instruction = "Test NavBand",
-                subText = "Notifica di prova"
-            )
-
-        NotificationForwarder(this).send(event)
+        NotificationForwarder(this).sendStandardTest()
     }
 
     private fun testVibration(
