@@ -100,6 +100,7 @@ class NotificationForwarder(
                 )
                 .setOnlyAlertOnce(true)
                 .setAutoCancel(false)
+            .setOngoing(true)
                 .setCategory(
                     NotificationCompat.CATEGORY_NAVIGATION
                 )
