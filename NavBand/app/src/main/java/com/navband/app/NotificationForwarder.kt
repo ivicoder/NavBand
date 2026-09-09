@@ -11,7 +11,7 @@ class NotificationForwarder(
 ) {
 
     companion object {
-        private const val CHANNEL = "navband_navigation"
+        private const val CHANNEL = "navband_test"
         private const val NOTIFICATION_ID = 5000
     }
 
@@ -29,11 +29,8 @@ class NotificationForwarder(
             val channel = NotificationChannel(
                 CHANNEL,
                 "NavBand navigazione",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             )
-
-            channel.setSound(null, null)
-            channel.enableVibration(false)
 
             manager.createNotificationChannel(channel)
         }
