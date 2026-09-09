@@ -45,12 +45,6 @@
 
             </intent-filter>
 
-            <meta-data
-                android:name=
-                    "android.service.notification"
-                android:resource=
-                    "@xml/notification_listener_config" />
-
         </service>
 
     </application>
