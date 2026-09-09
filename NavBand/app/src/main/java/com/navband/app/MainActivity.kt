@@ -72,6 +72,23 @@ class MainActivity : ComponentActivity() {
                          */
 
                         Text(
+                            text = "TEST NOTIFICA",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+
+                        Text(
+                            text = "Invia una vera notifica Android di NavBand"
+                        )
+
+                        Button(
+                            onClick = {
+                                testNotification()
+                            }
+                        ) {
+                            Text("Test notifica ← Sinistra")
+                        }
+
+                        Text(
                             text = "TEST VIBRAZIONI",
                             style = MaterialTheme.typography.titleLarge
                         )
@@ -232,6 +249,18 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    private fun testNotification() {
+        val event =
+            NavigationEvent(
+                direction = NavigationDirection.LEFT,
+                distance = "200 m",
+                instruction = "Test NavBand",
+                subText = "Notifica di prova"
+            )
+
+        NotificationForwarder(this).send(event)
     }
 
     private fun testVibration(
