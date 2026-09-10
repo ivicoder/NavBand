@@ -252,12 +252,33 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun testNotification() {
+        val bitmap =
+            Bitmap.createBitmap(
+                128,
+                128,
+                Bitmap.Config.ARGB_8888
+            )
+
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.BLACK)
+
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.color = Color.WHITE
+        paint.strokeWidth = 14f
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.SQUARE
+
+        canvas.drawLine(30f, 64f, 98f, 64f, paint)
+        canvas.drawLine(30f, 64f, 58f, 36f, paint)
+        canvas.drawLine(30f, 64f, 58f, 92f, paint)
+
         val event =
             NavigationEvent(
-                direction = NavigationDirection.RIGHT,
+                direction = NavigationDirection.LEFT,
                 distance = "100 m",
-                instruction = "Test NavBand",
-                subText = "Notifica di prova"
+                instruction = "TEST FRECCIA SINISTRA",
+                subText = "Bitmap 128x128",
+                image = bitmap
             )
 
         NotificationForwarder(this).send(event)
