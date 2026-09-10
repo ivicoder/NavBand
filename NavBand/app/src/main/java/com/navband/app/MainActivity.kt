@@ -29,13 +29,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
 
 class MainActivity : ComponentActivity() {
+
+    private var bluetoothResults = mutableListOf<String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         requestNotificationPermission()
+        requestBluetoothPermissions()
 
         setContent {
             MaterialTheme {
@@ -71,7 +75,37 @@ class MainActivity : ComponentActivity() {
                         }
 
                         /*
-                         * TEST VIBRAZIONI
+                         * BLUETOOTH
+                         */
+
+                        Text(
+                            text = "BLUETOOTH",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+
+                        Text(
+                            text = "Cerca dispositivi Bluetooth Low Energy"
+                        )
+
+                        Button(
+                            onClick = {
+                                scanBluetooth()
+                            }
+                        ) {
+                            Text("Scansiona Bluetooth")
+                        }
+
+                        if (bluetoothResults.isNotEmpty()) {
+                            Text(
+                                text = bluetoothResults.joinToString(
+                                    separator = "\n\n"
+                                ),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+
+                        /*
+                         * TEST NOTIFICA
                          */
 
                         Text(
@@ -90,6 +124,10 @@ class MainActivity : ComponentActivity() {
                         ) {
                             Text("Test notifica ← Sinistra")
                         }
+
+                        /*
+                         * TEST VIBRAZIONI
+                         */
 
                         Text(
                             text = "TEST VIBRAZIONI",
@@ -144,6 +182,10 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         )
+
+                        /*
+                         * TEST ROTATORIA
+                         */
 
                         Text(
                             text = "TEST ROTATORIA",
@@ -214,7 +256,9 @@ class MainActivity : ComponentActivity() {
                                 contentDescription =
                                     "Immagine estratta da Google Maps",
                                 modifier = Modifier
-                                    .background(androidx.compose.ui.graphics.Color.Black)
+                                    .background(
+                                        androidx.compose.ui.graphics.Color.Black
+                                    )
                                     .padding(10.dp)
                             )
 
@@ -251,6 +295,118 @@ class MainActivity : ComponentActivity() {
                     REQUEST_NOTIFICATION_PERMISSION
                 )
             }
+        }
+    }
+
+    private fun requestBluetoothPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+
+            val permissions = arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT
+            )
+
+            val missing = permissions.filter {
+                checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+            }
+
+            if (missing.isNotEmpty()) {
+                requestPermissions(
+                    missing.toTypedArray(),
+                    REQUEST_BLUETOOTH_PERMISSION
+                )
+            }
+        }
+    }
+
+    private fun scanBluetooth() {
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (
+                checkSelfPermission(
+                    Manifest.permission.BLUETOOTH_SCAN
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestBluetoothPermissions()
+                return
+            }
+        }
+
+        bluetoothResults.clear()
+
+        val started =
+            BluetoothScanner.scan(
+                context = this
+            ) { device ->
+
+                runOnUiThread {
+
+                    if (!bluetoothResults.contains(device)) {
+                        bluetoothResults.add(device)
+                    }
+
+                    setContent {
+                        MaterialTheme {
+                            Surface(
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(20.dp)
+                                        .verticalScroll(
+                                            rememberScrollState()
+                                        ),
+                                    horizontalAlignment =
+                                        Alignment.CenterHorizontally
+                                ) {
+
+                                    Text(
+                                        text = "NavBand",
+                                        style =
+                                            MaterialTheme
+                                                .typography
+                                                .headlineLarge
+                                    )
+
+                                    Text(
+                                        text =
+                                            "Dispositivi Bluetooth trovati"
+                                    )
+
+                                    Text(
+                                        text =
+                                            bluetoothResults
+                                                .joinToString(
+                                                    "\n\n"
+                                                ),
+                                        style =
+                                            MaterialTheme
+                                                .typography
+                                                .bodySmall
+                                    )
+
+                                    Button(
+                                        onClick = {
+                                            scanBluetooth()
+                                        }
+                                    ) {
+                                        Text(
+                                            "Nuova scansione"
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+        if (!started) {
+            bluetoothResults.add(
+                "Impossibile avviare la scansione.\n" +
+                    "Controlla Bluetooth e permessi."
+            )
         }
     }
 
@@ -318,6 +474,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val REQUEST_NOTIFICATION_PERMISSION = 1001
+        private const val REQUEST_BLUETOOTH_PERMISSION = 1002
     }
 }
 
