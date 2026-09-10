@@ -214,7 +214,7 @@ class MainActivity : ComponentActivity() {
                                 contentDescription =
                                     "Immagine estratta da Google Maps",
                                 modifier = Modifier
-                                    .background(Color.Black)
+                                    .background(Color.BLACK)
                                     .padding(10.dp)
                             )
 
