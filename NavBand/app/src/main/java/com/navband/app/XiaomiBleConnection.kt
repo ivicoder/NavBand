@@ -8,6 +8,8 @@ import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothProfile
 import android.content.Context
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.UUID
 
 class XiaomiBleConnection(
@@ -40,9 +42,33 @@ class XiaomiBleConnection(
             UUID.fromString(
                 "00002902-0000-1000-8000-00805f9b34fb"
             )
+
+        private const val MAX_WRITE_SIZE = 244
     }
 
     private var bluetoothGatt: BluetoothGatt? = null
+
+    private var writeCharacteristic:
+        BluetoothGattCharacteristic? = null
+
+    private var authProtocol:
+        XiaomiAuthProtocol? = null
+
+    private var authStarted = false
+
+    private var incomingChunkCount = 0
+
+    private val incomingChunks =
+        mutableMapOf<Int, ByteArray>()
+
+    private var outgoingChunks:
+        List<ByteArray> = emptyList()
+
+    private var outgoingChunkIndex = 0
+
+    private var waitingForChunkStartAck = false
+
+    private var waitingForWrite = false
 
     fun connect(device: BluetoothDevice) {
         disconnect()
@@ -53,6 +79,17 @@ class XiaomiBleConnection(
         bluetoothGatt?.disconnect()
         bluetoothGatt?.close()
         bluetoothGatt = null
+
+        authProtocol = null
+        authStarted = false
+
+        incomingChunkCount = 0
+        incomingChunks.clear()
+
+        outgoingChunks = emptyList()
+        outgoingChunkIndex = 0
+        waitingForChunkStartAck = false
+        waitingForWrite = false
     }
 
     @SuppressLint("MissingPermission")
@@ -77,16 +114,14 @@ class XiaomiBleConnection(
             gatt.getService(FE95_SERVICE)
 
         if (service == null) {
-            onError(
-                "Servizio FE95 non trovato"
-            )
+            onError("Servizio FE95 non trovato")
             return
         }
 
         val readCharacteristic =
             service.getCharacteristic(FE95_READ)
 
-        val writeCharacteristic =
+        val write =
             service.getCharacteristic(FE95_WRITE)
 
         if (readCharacteristic == null) {
@@ -96,17 +131,19 @@ class XiaomiBleConnection(
             return
         }
 
-        if (writeCharacteristic == null) {
+        if (write == null) {
             onError(
                 "Caratteristica FE95/52 non trovata"
             )
             return
         }
 
+        writeCharacteristic = write
+
         onDebug(
             ">>> CANALE XIAOMI FE95 IDENTIFICATO\n" +
                 "READ/NOTIFY: ${readCharacteristic.uuid}\n" +
-                "WRITE: ${writeCharacteristic.uuid}"
+                "WRITE: ${write.uuid}"
         )
 
         val notificationEnabled =
@@ -149,6 +186,580 @@ class XiaomiBleConnection(
         )
     }
 
+    @SuppressLint("MissingPermission")
+    private fun startAuthentication() {
+
+        if (authStarted) {
+            return
+        }
+
+        val authKey =
+            XiaomiAuthManager.getAuthKey(context)
+
+        if (authKey == null) {
+
+            onError(
+                "Auth key Xiaomi non configurata"
+            )
+
+            return
+        }
+
+        authProtocol =
+            XiaomiAuthProtocol(authKey)
+
+        authStarted = true
+
+        onDebug(
+            ">>> XIAOMI AUTH AVVIATA"
+        )
+
+        val firstCommand =
+            authProtocol!!
+                .start()
+
+        onDebug(
+            ">>> PHONE NONCE GENERATO\n" +
+                "DATA: ${toHex(firstCommand)}"
+        )
+
+        sendChunked(
+            firstCommand
+        )
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendChunked(
+        payload: ByteArray
+    ) {
+
+        val characteristic =
+            writeCharacteristic
+                ?: run {
+                    onError(
+                        "FE95/52 non disponibile"
+                    )
+                    return
+                }
+
+        if (payload.isEmpty()) {
+            onError(
+                "Payload Xiaomi vuoto"
+            )
+            return
+        }
+
+        val chunkPayloadSize =
+            MAX_WRITE_SIZE - 2
+
+        val chunks =
+            ArrayList<ByteArray>()
+
+        var offset = 0
+
+        while (offset < payload.size) {
+
+            val end =
+                minOf(
+                    offset + chunkPayloadSize,
+                    payload.size
+                )
+
+            chunks.add(
+                payload.copyOfRange(
+                    offset,
+                    end
+                )
+            )
+
+            offset = end
+        }
+
+        outgoingChunks = chunks
+        outgoingChunkIndex = 0
+        waitingForChunkStartAck = true
+        waitingForWrite = false
+
+        val start =
+            ByteBuffer
+                .allocate(6)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .putShort(0)
+                .put(0)
+                .put(0)
+                .putShort(chunks.size.toShort())
+                .array()
+
+        onDebug(
+            ">>> XIAOMI CHUNK START\n" +
+                "CHUNKS: ${chunks.size}\n" +
+                "DATA: ${toHex(start)}"
+        )
+
+        writeRaw(
+            characteristic,
+            start
+        )
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendNextOutgoingChunk() {
+
+        if (
+            !waitingForChunkStartAck ||
+            waitingForWrite
+        ) {
+            return
+        }
+
+        if (
+            outgoingChunkIndex >=
+            outgoingChunks.size
+        ) {
+
+            waitingForChunkStartAck = false
+
+            onDebug(
+                ">>> XIAOMI CHUNK TRASMISSION COMPLETATA"
+            )
+
+            return
+        }
+
+        val characteristic =
+            writeCharacteristic
+                ?: return
+
+        val chunkNumber =
+            outgoingChunkIndex + 1
+
+        val payload =
+            outgoingChunks[
+                outgoingChunkIndex
+            ]
+
+        val packet =
+            ByteBuffer
+                .allocate(
+                    2 + payload.size
+                )
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .putShort(
+                    chunkNumber.toShort()
+                )
+                .put(payload)
+                .array()
+
+        onDebug(
+            ">>> XIAOMI CHUNK $chunkNumber/" +
+                "${outgoingChunks.size}\n" +
+                "DATA: ${toHex(packet)}"
+        )
+
+        waitingForWrite = true
+
+        writeRaw(
+            characteristic,
+            packet
+        )
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun writeRaw(
+        characteristic:
+            BluetoothGattCharacteristic,
+        data: ByteArray
+    ) {
+
+        characteristic.writeType =
+            BluetoothGattCharacteristic
+                .WRITE_TYPE_DEFAULT
+
+        characteristic.value = data
+
+        val success =
+            bluetoothGatt
+                ?.writeCharacteristic(
+                    characteristic
+                )
+                ?: false
+
+        if (!success) {
+
+            waitingForWrite = false
+
+            onError(
+                "Scrittura FE95/52 fallita"
+            )
+        }
+    }
+
+    private fun handleIncomingPacket(
+        data: ByteArray
+    ) {
+
+        if (data.size < 3) {
+            onDebug(
+                ">>> FE95 PACCHETTO TROPPO CORTO\n" +
+                    "DATA: ${toHex(data)}"
+            )
+            return
+        }
+
+        val buffer =
+            ByteBuffer
+                .wrap(data)
+                .order(ByteOrder.LITTLE_ENDIAN)
+
+        val chunk =
+            buffer.short.toInt() and 0xFFFF
+
+        if (chunk != 0) {
+
+            handleIncomingChunk(
+                chunk,
+                buffer
+            )
+
+            return
+        }
+
+        val type =
+            buffer.get().toInt() and 0xFF
+
+        when (type) {
+
+            0 -> {
+                handleIncomingChunkStart(
+                    buffer
+                )
+            }
+
+            1 -> {
+                handleIncomingAck(
+                    buffer
+                )
+            }
+
+            2 -> {
+                handleIncomingSingleCommand(
+                    buffer
+                )
+            }
+
+            3 -> {
+                onDebug(
+                    ">>> XIAOMI ACK\n" +
+                        "DATA: ${toHex(data)}"
+                )
+            }
+
+            else -> {
+                onDebug(
+                    ">>> XIAOMI FRAME UNKNOWN\n" +
+                        "TYPE: $type\n" +
+                        "DATA: ${toHex(data)}"
+                )
+            }
+        }
+    }
+
+    private fun handleIncomingChunkStart(
+        buffer: ByteBuffer
+    ) {
+
+        if (buffer.remaining() < 3) {
+            onError(
+                "Xiaomi chunk start non valido"
+            )
+            return
+        }
+
+        val encrypted =
+            buffer.get().toInt() and 0xFF
+
+        incomingChunkCount =
+            buffer.short.toInt() and 0xFFFF
+
+        incomingChunks.clear()
+
+        onDebug(
+            ">>> XIAOMI CHUNK START RICEVUTO\n" +
+                "ENCRYPTED: $encrypted\n" +
+                "CHUNKS: $incomingChunkCount"
+        )
+
+        sendChunkStartAck()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendChunkStartAck() {
+
+        val characteristic =
+            writeCharacteristic
+                ?: return
+
+        val ack =
+            byteArrayOf(
+                0x00,
+                0x00,
+                0x01,
+                0x01
+            )
+
+        onDebug(
+            ">>> XIAOMI CHUNK START ACK"
+        )
+
+        writeRaw(
+            characteristic,
+            ack
+        )
+    }
+
+    private fun handleIncomingChunk(
+        chunk: Int,
+        buffer: ByteBuffer
+    ) {
+
+        if (incomingChunkCount <= 0) {
+            onDebug(
+                ">>> CHUNK RICEVUTO SENZA START: $chunk"
+            )
+            return
+        }
+
+        if (
+            chunk < 1 ||
+            chunk > incomingChunkCount
+        ) {
+            onError(
+                "Chunk Xiaomi non valido: $chunk"
+            )
+            return
+        }
+
+        val payload =
+            ByteArray(
+                buffer.remaining()
+            )
+
+        buffer.get(payload)
+
+        incomingChunks[chunk] =
+            payload
+
+        onDebug(
+            ">>> XIAOMI CHUNK RICEVUTO " +
+                "$chunk/$incomingChunkCount"
+        )
+
+        if (
+            incomingChunks.size ==
+            incomingChunkCount
+        ) {
+
+            val reconstructed =
+                reconstructIncomingPayload()
+
+            incomingChunkCount = 0
+            incomingChunks.clear()
+
+            if (reconstructed.isEmpty()) {
+                onError(
+                    "Payload Xiaomi ricostruito vuoto"
+                )
+                return
+            }
+
+            onDebug(
+                ">>> XIAOMI PAYLOAD RICOSTRUITO\n" +
+                    "SIZE: ${reconstructed.size}\n" +
+                    "DATA: ${toHex(reconstructed)}"
+            )
+
+            handleXiaomiCommand(
+                reconstructed
+            )
+
+            sendChunkEndAck()
+        }
+    }
+
+    private fun reconstructIncomingPayload():
+        ByteArray {
+
+        val output =
+            ArrayList<Byte>()
+
+        for (index in 1..incomingChunkCount) {
+
+            val chunk =
+                incomingChunks[index]
+                    ?: return ByteArray(0)
+
+            for (value in chunk) {
+                output.add(value)
+            }
+        }
+
+        return ByteArray(output.size) {
+            output[it]
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendChunkEndAck() {
+
+        val characteristic =
+            writeCharacteristic
+                ?: return
+
+        val ack =
+            byteArrayOf(
+                0x00,
+                0x00,
+                0x01,
+                0x00
+            )
+
+        writeRaw(
+            characteristic,
+            ack
+        )
+    }
+
+    private fun handleIncomingAck(
+        buffer: ByteBuffer
+    ) {
+
+        if (!buffer.hasRemaining()) {
+            return
+        }
+
+        val subtype =
+            buffer.get().toInt() and 0xFF
+
+        when (subtype) {
+
+            1 -> {
+
+                onDebug(
+                    ">>> XIAOMI CHUNK START ACK RICEVUTO"
+                )
+
+                waitingForChunkStartAck = true
+                waitingForWrite = false
+
+                sendNextOutgoingChunk()
+            }
+
+            0 -> {
+
+                onDebug(
+                    ">>> XIAOMI CHUNK END ACK RICEVUTO"
+                )
+            }
+
+            2 -> {
+
+                onError(
+                    "Xiaomi CHUNK NACK ricevuto"
+                )
+            }
+
+            else -> {
+
+                onDebug(
+                    ">>> XIAOMI CHUNK ACK TYPE=$subtype"
+                )
+            }
+        }
+    }
+
+    private fun handleIncomingSingleCommand(
+        buffer: ByteBuffer
+    ) {
+
+        if (!buffer.hasRemaining()) {
+            return
+        }
+
+        val encryption =
+            buffer.get().toInt() and 0xFF
+
+        val payload =
+            ByteArray(
+                buffer.remaining()
+            )
+
+        buffer.get(payload)
+
+        onDebug(
+            ">>> XIAOMI SINGLE COMMAND\n" +
+                "ENCRYPTION: $encryption\n" +
+                "DATA: ${toHex(payload)}"
+        )
+
+        handleXiaomiCommand(
+            payload
+        )
+    }
+
+    private fun handleXiaomiCommand(
+        payload: ByteArray
+    ) {
+
+        val protocol =
+            authProtocol
+                ?: return
+
+        val result =
+            protocol.handleCommand(
+                payload
+            )
+
+        when (result) {
+
+            is XiaomiAuthProtocol.AuthResult.AuthCommand -> {
+
+                onDebug(
+                    ">>> WATCH NONCE RICEVUTO\n" +
+                        ">>> WATCH HMAC VERIFICATO"
+                )
+
+                onDebug(
+                    ">>> AUTH STEP 2 INVIATO"
+                )
+
+                sendChunked(
+                    result.command
+                )
+            }
+
+            is XiaomiAuthProtocol.AuthResult.Authenticated -> {
+
+                onDebug(
+                    ">>> XIAOMI AUTH OK"
+                )
+            }
+
+            is XiaomiAuthProtocol.AuthResult.Error -> {
+
+                onError(
+                    "Xiaomi authentication: " +
+                        result.message
+                )
+            }
+
+            XiaomiAuthProtocol.AuthResult.Ignored -> {
+                onDebug(
+                    ">>> XIAOMI COMANDO IGNORATO"
+                )
+            }
+        }
+    }
+
     private val gattCallback =
         object : BluetoothGattCallback() {
 
@@ -169,7 +780,10 @@ class XiaomiBleConnection(
                                 "Avvio service discovery..."
                         )
 
-                        if (!gatt.discoverServices()) {
+                        if (
+                            !gatt.discoverServices()
+                        ) {
+
                             onError(
                                 "Avvio service discovery fallito"
                             )
@@ -178,7 +792,9 @@ class XiaomiBleConnection(
 
                     BluetoothProfile.STATE_DISCONNECTED -> {
 
-                        if (bluetoothGatt == gatt) {
+                        if (
+                            bluetoothGatt == gatt
+                        ) {
                             bluetoothGatt = null
                         }
 
@@ -189,8 +805,10 @@ class XiaomiBleConnection(
                 }
 
                 if (
-                    status != BluetoothGatt.GATT_SUCCESS &&
-                    newState != BluetoothProfile.STATE_DISCONNECTED
+                    status !=
+                    BluetoothGatt.GATT_SUCCESS &&
+                    newState !=
+                    BluetoothProfile.STATE_DISCONNECTED
                 ) {
 
                     onError(
@@ -211,7 +829,8 @@ class XiaomiBleConnection(
                 ) {
 
                     onError(
-                        "Service discovery fallita: status=$status"
+                        "Service discovery fallita: " +
+                            "status=$status"
                     )
 
                     return
@@ -235,22 +854,77 @@ class XiaomiBleConnection(
             ) {
 
                 if (
-                    descriptor.uuid == CLIENT_CONFIG
+                    descriptor.uuid !=
+                    CLIENT_CONFIG
+                ) {
+                    return
+                }
+
+                if (
+                    status ==
+                    BluetoothGatt.GATT_SUCCESS
                 ) {
 
+                    onDebug(
+                        ">>> NOTIFY FE95/51 ABILITATA"
+                    )
+
+                    startAuthentication()
+
+                } else {
+
+                    onError(
+                        "CCCD FE95/51 fallito: " +
+                            "status=$status"
+                    )
+                }
+            }
+
+            override fun onCharacteristicWrite(
+                gatt: BluetoothGatt,
+                characteristic:
+                    BluetoothGattCharacteristic,
+                status: Int
+            ) {
+
+                if (
+                    characteristic.uuid !=
+                    FE95_WRITE
+                ) {
+                    return
+                }
+
+                waitingForWrite = false
+
+                if (
+                    status !=
+                    BluetoothGatt.GATT_SUCCESS
+                ) {
+
+                    onError(
+                        "FE95/52 write fallita: " +
+                            "status=$status"
+                    )
+
+                    return
+                }
+
+                if (
+                    waitingForChunkStartAck &&
+                    outgoingChunkIndex <
+                    outgoingChunks.size
+                ) {
+
+                    outgoingChunkIndex++
+
                     if (
-                        status ==
-                        BluetoothGatt.GATT_SUCCESS
+                        outgoingChunkIndex <
+                        outgoingChunks.size
                     ) {
-
-                        onDebug(
-                            ">>> NOTIFY FE95/51 ABILITATA"
-                        )
-
+                        sendNextOutgoingChunk()
                     } else {
-
-                        onError(
-                            "CCCD FE95/51 fallito: status=$status"
+                        onDebug(
+                            ">>> TUTTI I CHUNK INVIATI"
                         )
                     }
                 }
@@ -258,11 +932,13 @@ class XiaomiBleConnection(
 
             override fun onCharacteristicChanged(
                 gatt: BluetoothGatt,
-                characteristic: BluetoothGattCharacteristic
+                characteristic:
+                    BluetoothGattCharacteristic
             ) {
 
                 if (
-                    characteristic.uuid != FE95_READ
+                    characteristic.uuid !=
+                    FE95_READ
                 ) {
                     return
                 }
@@ -273,6 +949,10 @@ class XiaomiBleConnection(
                 onDebug(
                     ">>> NOTIFICA FE95/51\n" +
                         "DATA: ${toHex(data)}"
+                )
+
+                handleIncomingPacket(
+                    data
                 )
             }
         }
