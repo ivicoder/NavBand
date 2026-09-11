@@ -12,7 +12,8 @@ class XiaomiBleConnection(
     private val onConnected: () -> Unit = {},
     private val onDisconnected: () -> Unit = {},
     private val onServicesDiscovered: (BluetoothGatt) -> Unit = {},
-    private val onError: (String) -> Unit = {}
+    private val onError: (String) -> Unit = {},
+    private val onDebug: (String) -> Unit = {}
 ) {
 
     private var bluetoothGatt: BluetoothGatt? = null
@@ -55,6 +56,11 @@ class XiaomiBleConnection(
                     BluetoothProfile.STATE_CONNECTED -> {
                         bluetoothGatt = gatt
 
+                        onDebug(
+                            ">>> GATT CONNESSA\n" +
+                                "Avvio service discovery..."
+                        )
+
                         if (!gatt.discoverServices()) {
                             onError(
                                 "Avvio service discovery fallito"
@@ -68,6 +74,7 @@ class XiaomiBleConnection(
                         }
 
                         gatt.close()
+
                         onDisconnected()
                     }
                 }
@@ -94,6 +101,108 @@ class XiaomiBleConnection(
                 }
 
                 onConnected()
+
+                val result =
+                    StringBuilder()
+
+                result.append(
+                    ">>> SERVIZI XIAOMI IDENTIFICATI\n\n"
+                )
+
+                var foundXiaomiService = false
+
+                for (service in gatt.services) {
+
+                    val uuid =
+                        service.uuid.toString()
+
+                    val isFdab =
+                        uuid.startsWith(
+                            "0000fdab-",
+                            ignoreCase = true
+                        )
+
+                    val isFe95 =
+                        uuid.startsWith(
+                            "0000fe95-",
+                            ignoreCase = true
+                        )
+
+                    if (!isFdab && !isFe95) {
+                        continue
+                    }
+
+                    foundXiaomiService = true
+
+                    result.append(
+                        "SERVICE "
+                    )
+
+                    result.append(
+                        if (isFdab) {
+                            "FDAB"
+                        } else {
+                            "FE95"
+                        }
+                    )
+
+                    result.append(
+                        "\n"
+                    )
+
+                    result.append(
+                        uuid
+                    )
+
+                    result.append(
+                        "\n"
+                    )
+
+                    for (
+                        characteristic
+                        in service.characteristics
+                    ) {
+
+                        result.append(
+                            "  CHAR\n"
+                        )
+
+                        result.append(
+                            characteristic.uuid
+                        )
+
+                        result.append(
+                            "\n"
+                        )
+
+                        result.append(
+                            "  properties="
+                        )
+
+                        result.append(
+                            characteristic.properties
+                        )
+
+                        result.append(
+                            "\n\n"
+                        )
+                    }
+
+                    result.append(
+                        "\n"
+                    )
+                }
+
+                if (!foundXiaomiService) {
+                    result.append(
+                        "Nessun servizio Xiaomi FDAB/FE95 trovato.\n"
+                    )
+                }
+
+                onDebug(
+                    result.toString()
+                )
+
                 onServicesDiscovered(gatt)
             }
         }

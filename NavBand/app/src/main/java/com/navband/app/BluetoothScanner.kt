@@ -187,6 +187,10 @@ object BluetoothScanner {
                                             ">>> ERRORE GATT\n" +
                                                 error
                                         )
+                                    },
+
+                                    onDebug = { debug ->
+                                        onDevice(debug)
                                     }
                                 )
 
