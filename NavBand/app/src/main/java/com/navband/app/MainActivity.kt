@@ -78,6 +78,15 @@ class MainActivity : ComponentActivity() {
                          * BLUETOOTH
                          */
 
+                        XiaomiAuthPanel(
+                            onSave = { key ->
+                                XiaomiAuthManager.saveAuthKey(
+                                    this@MainActivity,
+                                    key
+                                )
+                            }
+                        )
+
                         Text(
                             text = "BLUETOOTH",
                             style = MaterialTheme.typography.titleLarge
