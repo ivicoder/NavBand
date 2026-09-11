@@ -8,7 +8,11 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 
 class XiaomiBleConnection(
-    private val context: Context
+    private val context: Context,
+    private val onConnected: () -> Unit = {},
+    private val onDisconnected: () -> Unit = {},
+    private val onServicesDiscovered: (BluetoothGatt) -> Unit = {},
+    private val onError: (String) -> Unit = {}
 ) {
 
     private var bluetoothGatt: BluetoothGatt? = null
@@ -16,8 +20,7 @@ class XiaomiBleConnection(
     fun connect(device: BluetoothDevice) {
         disconnect()
 
-        bluetoothGatt =
-            connectGatt(device)
+        bluetoothGatt = connectGatt(device)
     }
 
     fun disconnect() {
@@ -34,7 +37,8 @@ class XiaomiBleConnection(
         return device.connectGatt(
             context,
             false,
-            gattCallback
+            gattCallback,
+            BluetoothDevice.TRANSPORT_LE
         )
     }
 
@@ -51,7 +55,11 @@ class XiaomiBleConnection(
                     BluetoothProfile.STATE_CONNECTED -> {
                         bluetoothGatt = gatt
 
-                        gatt.discoverServices()
+                        if (!gatt.discoverServices()) {
+                            onError(
+                                "Avvio service discovery fallito"
+                            )
+                        }
                     }
 
                     BluetoothProfile.STATE_DISCONNECTED -> {
@@ -60,7 +68,17 @@ class XiaomiBleConnection(
                         }
 
                         gatt.close()
+                        onDisconnected()
                     }
+                }
+
+                if (
+                    status != BluetoothGatt.GATT_SUCCESS &&
+                    newState != BluetoothProfile.STATE_DISCONNECTED
+                ) {
+                    onError(
+                        "Errore GATT: status=$status"
+                    )
                 }
             }
 
@@ -69,11 +87,14 @@ class XiaomiBleConnection(
                 status: Int
             ) {
                 if (status != BluetoothGatt.GATT_SUCCESS) {
+                    onError(
+                        "Service discovery fallita: status=$status"
+                    )
                     return
                 }
 
-                // I servizi BLE del dispositivo sono ora disponibili.
-                // L'autenticazione Xiaomi verrà aggiunta nel passo successivo.
+                onConnected()
+                onServicesDiscovered(gatt)
             }
         }
 }
