@@ -70,6 +70,14 @@ class XiaomiBleConnection(
 
     private var waitingForWrite = false
 
+    /*
+     * Stato separato per distinguere la scrittura
+     * del CHUNK START dalla scrittura dei veri chunk.
+     */
+    private var waitingForChunkStartWrite = false
+
+    private var outgoingChunkInFlight = false
+
     fun connect(device: BluetoothDevice) {
         disconnect()
         bluetoothGatt = connectGatt(device)
@@ -90,6 +98,8 @@ class XiaomiBleConnection(
         outgoingChunkIndex = 0
         waitingForChunkStartAck = false
         waitingForWrite = false
+        waitingForChunkStartWrite = false
+        outgoingChunkInFlight = false
     }
 
     @SuppressLint("MissingPermission")
@@ -279,6 +289,8 @@ class XiaomiBleConnection(
         outgoingChunkIndex = 0
         waitingForChunkStartAck = true
         waitingForWrite = false
+        waitingForChunkStartWrite = true
+        outgoingChunkInFlight = false
 
         val start =
             ByteBuffer
@@ -357,6 +369,8 @@ class XiaomiBleConnection(
         )
 
         waitingForWrite = true
+        outgoingChunkInFlight = true
+        waitingForChunkStartWrite = false
 
         writeRaw(
             characteristic,
@@ -387,6 +401,8 @@ class XiaomiBleConnection(
         if (!success) {
 
             waitingForWrite = false
+            waitingForChunkStartWrite = false
+            outgoingChunkInFlight = false
 
             onError(
                 "Scrittura FE95/52 fallita"
@@ -650,6 +666,8 @@ class XiaomiBleConnection(
 
                 waitingForChunkStartAck = true
                 waitingForWrite = false
+                waitingForChunkStartWrite = false
+                outgoingChunkInFlight = false
 
                 sendNextOutgoingChunk()
             }
@@ -894,6 +912,46 @@ class XiaomiBleConnection(
                     return
                 }
 
+                /*
+                 * La scrittura del CHUNK START NON è
+                 * un chunk dati. Dopo questa callback
+                 * dobbiamo aspettare l'ACK della Band.
+                 */
+                if (waitingForChunkStartWrite) {
+
+                    waitingForChunkStartWrite = false
+                    waitingForWrite = false
+
+                    if (
+                        status !=
+                        BluetoothGatt.GATT_SUCCESS
+                    ) {
+
+                        onError(
+                            "FE95/52 CHUNK START fallito: " +
+                                "status=$status"
+                        )
+
+                    } else {
+
+                        onDebug(
+                            ">>> XIAOMI CHUNK START INVIATO, " +
+                                "ATTESA ACK"
+                        )
+                    }
+
+                    return
+                }
+
+                /*
+                 * Solo la scrittura di un vero chunk
+                 * modifica outgoingChunkIndex.
+                 */
+                if (!outgoingChunkInFlight) {
+                    return
+                }
+
+                outgoingChunkInFlight = false
                 waitingForWrite = false
 
                 if (
@@ -921,8 +979,11 @@ class XiaomiBleConnection(
                         outgoingChunkIndex <
                         outgoingChunks.size
                     ) {
+
                         sendNextOutgoingChunk()
+
                     } else {
+
                         onDebug(
                             ">>> TUTTI I CHUNK INVIATI"
                         )
