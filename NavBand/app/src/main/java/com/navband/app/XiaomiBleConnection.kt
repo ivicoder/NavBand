@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothProfile
 import android.content.Context
 
@@ -155,7 +156,7 @@ class XiaomiBleConnection(
                     )
 
                     result.append(
-                        "\n"
+                        "\n\n"
                     )
 
                     for (
@@ -164,7 +165,7 @@ class XiaomiBleConnection(
                     ) {
 
                         result.append(
-                            "  CHAR\n"
+                            "CHAR\n"
                         )
 
                         result.append(
@@ -176,11 +177,25 @@ class XiaomiBleConnection(
                         )
 
                         result.append(
-                            "  properties="
+                            "properties="
                         )
 
                         result.append(
                             characteristic.properties
+                        )
+
+                        result.append(
+                            "\n"
+                        )
+
+                        result.append(
+                            "permissions="
+                        )
+
+                        result.append(
+                            propertyNames(
+                                characteristic
+                            )
                         )
 
                         result.append(
@@ -206,4 +221,79 @@ class XiaomiBleConnection(
                 onServicesDiscovered(gatt)
             }
         }
+
+    private fun propertyNames(
+        characteristic: BluetoothGattCharacteristic
+    ): String {
+
+        val properties =
+            characteristic.properties
+
+        val names =
+            ArrayList<String>()
+
+        if (
+            properties and
+            BluetoothGattCharacteristic.PROPERTY_READ
+            != 0
+        ) {
+            names.add("READ")
+        }
+
+        if (
+            properties and
+            BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE
+            != 0
+        ) {
+            names.add("WRITE_NO_RESPONSE")
+        }
+
+        if (
+            properties and
+            BluetoothGattCharacteristic.PROPERTY_WRITE
+            != 0
+        ) {
+            names.add("WRITE")
+        }
+
+        if (
+            properties and
+            BluetoothGattCharacteristic.PROPERTY_NOTIFY
+            != 0
+        ) {
+            names.add("NOTIFY")
+        }
+
+        if (
+            properties and
+            BluetoothGattCharacteristic.PROPERTY_INDICATE
+            != 0
+        ) {
+            names.add("INDICATE")
+        }
+
+        if (
+            properties and
+            BluetoothGattCharacteristic.PROPERTY_SIGNED_WRITE
+            != 0
+        ) {
+            names.add("SIGNED_WRITE")
+        }
+
+        if (
+            properties and
+            BluetoothGattCharacteristic.PROPERTY_EXTENDED_PROPS
+            != 0
+        ) {
+            names.add("EXTENDED_PROPS")
+        }
+
+        if (names.isEmpty()) {
+            return "NONE"
+        }
+
+        return names.joinToString(
+            separator = " + "
+        )
+    }
 }
