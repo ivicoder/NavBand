@@ -5,8 +5,10 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothProfile
 import android.content.Context
+import java.util.UUID
 
 class XiaomiBleConnection(
     private val context: Context,
@@ -19,6 +21,9 @@ class XiaomiBleConnection(
 
     private var bluetoothGatt: BluetoothGatt? = null
 
+    private val pendingNotificationCharacteristics =
+        ArrayDeque<BluetoothGattCharacteristic>()
+
     fun connect(device: BluetoothDevice) {
         disconnect()
 
@@ -26,6 +31,8 @@ class XiaomiBleConnection(
     }
 
     fun disconnect() {
+        pendingNotificationCharacteristics.clear()
+
         bluetoothGatt?.disconnect()
         bluetoothGatt?.close()
         bluetoothGatt = null
@@ -73,6 +80,8 @@ class XiaomiBleConnection(
                         if (bluetoothGatt == gatt) {
                             bluetoothGatt = null
                         }
+
+                        pendingNotificationCharacteristics.clear()
 
                         gatt.close()
 
@@ -219,8 +228,173 @@ class XiaomiBleConnection(
                 )
 
                 onServicesDiscovered(gatt)
+
+                enableFdabNotifications(gatt)
+            }
+
+            override fun onDescriptorWrite(
+                gatt: BluetoothGatt,
+                descriptor: BluetoothGattDescriptor,
+                status: Int
+            ) {
+                if (
+                    status == BluetoothGatt.GATT_SUCCESS
+                ) {
+                    onDebug(
+                        ">>> NOTIFY ABILITATA\n" +
+                            descriptor.characteristic.uuid
+                    )
+                } else {
+                    onError(
+                        "Abilitazione notify fallita: " +
+                            descriptor.characteristic.uuid +
+                            " status=$status"
+                    )
+                }
+
+                enableNextNotification(gatt)
+            }
+
+            override fun onCharacteristicChanged(
+                gatt: BluetoothGatt,
+                characteristic: BluetoothGattCharacteristic,
+                value: ByteArray
+            ) {
+                onDebug(
+                    ">>> NOTIFICA BLE\n" +
+                        "CHAR: ${characteristic.uuid}\n" +
+                        "DATA: ${bytesToHex(value)}"
+                )
             }
         }
+
+    @SuppressLint("MissingPermission")
+    private fun enableFdabNotifications(
+        gatt: BluetoothGatt
+    ) {
+
+        pendingNotificationCharacteristics.clear()
+
+        val fdab =
+            gatt.services.firstOrNull {
+                it.uuid.toString().startsWith(
+                    "0000fdab-",
+                    ignoreCase = true
+                )
+            }
+
+        if (fdab == null) {
+            onDebug(
+                ">>> FDAB NON TROVATO"
+            )
+            return
+        }
+
+        for (characteristic in fdab.characteristics) {
+
+            val uuid =
+                characteristic.uuid.toString()
+
+            val isTarget =
+                uuid.startsWith(
+                    "00000002-",
+                    ignoreCase = true
+                ) ||
+                uuid.startsWith(
+                    "00000003-",
+                    ignoreCase = true
+                )
+
+            if (
+                isTarget &&
+                characteristic.properties and
+                    BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0
+            ) {
+                pendingNotificationCharacteristics.add(
+                    characteristic
+                )
+            }
+        }
+
+        if (pendingNotificationCharacteristics.isEmpty()) {
+            onDebug(
+                ">>> FDAB/0002 E FDAB/0003 " +
+                    "SENZA NOTIFY"
+            )
+            return
+        }
+
+        enableNextNotification(gatt)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun enableNextNotification(
+        gatt: BluetoothGatt
+    ) {
+
+        if (
+            pendingNotificationCharacteristics.isEmpty()
+        ) {
+            onDebug(
+                ">>> NOTIFICHE FDAB CONFIGURATE"
+            )
+            return
+        }
+
+        val characteristic =
+            pendingNotificationCharacteristics.removeFirst()
+
+        val localEnabled =
+            gatt.setCharacteristicNotification(
+                characteristic,
+                true
+            )
+
+        if (!localEnabled) {
+            onError(
+                "setCharacteristicNotification fallita: " +
+                    characteristic.uuid
+            )
+
+            enableNextNotification(gatt)
+            return
+        }
+
+        val descriptor =
+            characteristic.getDescriptor(
+                CCCD_UUID
+            )
+
+        if (descriptor == null) {
+            onError(
+                "CCCD non trovato: " +
+                    characteristic.uuid
+            )
+
+            enableNextNotification(gatt)
+            return
+        }
+
+        val started =
+            gatt.writeDescriptor(
+                descriptor,
+                BluetoothGattDescriptor
+                    .ENABLE_NOTIFICATION_VALUE
+            )
+
+        if (
+            started !=
+            BluetoothGatt.GATT_SUCCESS
+        ) {
+            onError(
+                "writeDescriptor fallita: " +
+                    characteristic.uuid +
+                    " status=$started"
+            )
+
+            enableNextNotification(gatt)
+        }
+    }
 
     private fun propertyNames(
         characteristic: BluetoothGattCharacteristic
@@ -295,5 +469,26 @@ class XiaomiBleConnection(
         return names.joinToString(
             separator = " + "
         )
+    }
+
+    private fun bytesToHex(
+        value: ByteArray
+    ): String {
+
+        return value.joinToString(
+            separator = " "
+        ) {
+            "%02X".format(
+                it.toInt() and 0xFF
+            )
+        }
+    }
+
+    companion object {
+
+        private val CCCD_UUID =
+            UUID.fromString(
+                "00002902-0000-1000-8000-00805f9b34fb"
+            )
     }
 }
