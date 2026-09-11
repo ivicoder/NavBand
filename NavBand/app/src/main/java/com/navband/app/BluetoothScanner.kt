@@ -4,9 +4,6 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothGatt
-import android.bluetooth.BluetoothGattCallback
-import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.pm.PackageManager
@@ -54,7 +51,8 @@ object BluetoothScanner {
             return false
         }
 
-        var gatt: BluetoothGatt? = null
+        var connectionStarted = false
+        var xiaomiConnection: XiaomiBleConnection? = null
 
         val callback =
             object : BluetoothAdapter.LeScanCallback {
@@ -82,11 +80,14 @@ object BluetoothScanner {
                     }
 
                     if (
+                        !connectionStarted &&
                         name.contains(
                             "Xiaomi Smart Band 8",
                             ignoreCase = true
                         )
                     ) {
+
+                        connectionStarted = true
 
                         Handler(
                             Looper.getMainLooper()
@@ -97,158 +98,99 @@ object BluetoothScanner {
                                     "Connessione GATT in corso..."
                             )
 
-                            try {
+                            xiaomiConnection =
+                                XiaomiBleConnection(
+                                    context = context,
 
-                                gatt =
-                                    device.connectGatt(
-                                        context,
-                                        false,
-                                        object :
-                                            BluetoothGattCallback() {
+                                    onConnected = {
+                                        onDevice(
+                                            ">>> GATT CONNESSA\n" +
+                                                "Service discovery completata"
+                                        )
+                                    },
 
-                                            override fun
-                                            onConnectionStateChange(
-                                                gattInstance: BluetoothGatt,
-                                                status: Int,
-                                                newState: Int
+                                    onDisconnected = {
+                                        onDevice(
+                                            ">>> GATT DISCONNESSA"
+                                        )
+                                    },
+
+                                    onServicesDiscovered = { gatt ->
+
+                                        val result =
+                                            StringBuilder()
+
+                                        result.append(
+                                            ">>> SERVIZI GATT TROVATI\n\n"
+                                        )
+
+                                        for (
+                                            service in
+                                            gatt.services
+                                        ) {
+
+                                            result.append(
+                                                "SERVICE\n"
+                                            )
+
+                                            result.append(
+                                                service.uuid
+                                            )
+
+                                            result.append(
+                                                "\n"
+                                            )
+
+                                            for (
+                                                characteristic in
+                                                service.characteristics
                                             ) {
 
-                                                Handler(
-                                                    Looper.getMainLooper()
-                                                ).post {
+                                                result.append(
+                                                    "  CHAR\n"
+                                                )
 
-                                                    if (
-                                                        newState ==
-                                                        BluetoothProfile
-                                                            .STATE_CONNECTED
-                                                    ) {
+                                                result.append(
+                                                    characteristic.uuid
+                                                )
 
-                                                        onDevice(
-                                                            ">>> GATT CONNESSA\n" +
-                                                                "Status: $status\n" +
-                                                                "Avvio service discovery..."
-                                                        )
+                                                result.append(
+                                                    "\n"
+                                                )
 
-                                                        gattInstance
-                                                            .discoverServices()
+                                                result.append(
+                                                    "  properties="
+                                                )
 
-                                                    } else if (
-                                                        newState ==
-                                                        BluetoothProfile
-                                                            .STATE_DISCONNECTED
-                                                    ) {
+                                                result.append(
+                                                    characteristic
+                                                        .properties
+                                                )
 
-                                                        onDevice(
-                                                            ">>> GATT DISCONNESSA\n" +
-                                                                "Status: $status"
-                                                        )
-                                                    }
-                                                }
+                                                result.append(
+                                                    "\n\n"
+                                                )
                                             }
 
-                                            override fun
-                                            onServicesDiscovered(
-                                                gattInstance: BluetoothGatt,
-                                                status: Int
-                                            ) {
+                                            result.append(
+                                                "\n"
+                                            )
+                                        }
 
-                                                Handler(
-                                                    Looper.getMainLooper()
-                                                ).post {
+                                        onDevice(
+                                            result.toString()
+                                        )
+                                    },
 
-                                                    if (
-                                                        status !=
-                                                        BluetoothGatt
-                                                            .GATT_SUCCESS
-                                                    ) {
-
-                                                        onDevice(
-                                                            ">>> SERVICE DISCOVERY FALLITA\n" +
-                                                                "Status: $status"
-                                                        )
-
-                                                        return@post
-                                                    }
-
-                                                    val result =
-                                                        StringBuilder()
-
-                                                    result.append(
-                                                        ">>> SERVIZI GATT TROVATI\n\n"
-                                                    )
-
-                                                    for (
-                                                        service in
-                                                        gattInstance.services
-                                                    ) {
-
-                                                        result.append(
-                                                            "SERVICE\n"
-                                                        )
-
-                                                        result.append(
-                                                            service.uuid
-                                                        )
-
-                                                        result.append(
-                                                            "\n"
-                                                        )
-
-                                                        for (
-                                                            characteristic in
-                                                            service.characteristics
-                                                        ) {
-
-                                                            result.append(
-                                                                "  CHAR\n"
-                                                            )
-
-                                                            result.append(
-                                                                characteristic.uuid
-                                                            )
-
-                                                            result.append(
-                                                                "\n"
-                                                            )
-
-                                                            result.append(
-                                                                "  properties="
-                                                            )
-
-                                                            result.append(
-                                                                characteristic
-                                                                    .properties
-                                                            )
-
-                                                            result.append(
-                                                                "\n\n"
-                                                            )
-                                                        }
-
-                                                        result.append(
-                                                            "\n"
-                                                        )
-                                                    }
-
-                                                    onDevice(
-                                                        result.toString()
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        BluetoothDevice
-                                            .TRANSPORT_LE
-                                    )
-
-                            } catch (e: Exception) {
-
-                                onDevice(
-                                    ">>> ERRORE GATT\n" +
-                                        e.javaClass.simpleName +
-                                        "\n" +
-                                        (e.message ?: "")
+                                    onError = { error ->
+                                        onDevice(
+                                            ">>> ERRORE GATT\n" +
+                                                error
+                                        )
+                                    }
                                 )
-                            }
+
+                            xiaomiConnection?.connect(device)
                         }
                     }
                 }
