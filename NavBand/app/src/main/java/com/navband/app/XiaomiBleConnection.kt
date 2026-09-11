@@ -19,20 +19,37 @@ class XiaomiBleConnection(
     private val onDebug: (String) -> Unit = {}
 ) {
 
-    private var bluetoothGatt: BluetoothGatt? = null
+    companion object {
 
-    private val pendingNotificationCharacteristics =
-        ArrayDeque<BluetoothGattCharacteristic>()
+        private val FE95_SERVICE =
+            UUID.fromString(
+                "0000fe95-0000-1000-8000-00805f9b34fb"
+            )
+
+        private val FE95_READ =
+            UUID.fromString(
+                "00000051-0000-1000-8000-00805f9b34fb"
+            )
+
+        private val FE95_WRITE =
+            UUID.fromString(
+                "00000052-0000-1000-8000-00805f9b34fb"
+            )
+
+        private val CLIENT_CONFIG =
+            UUID.fromString(
+                "00002902-0000-1000-8000-00805f9b34fb"
+            )
+    }
+
+    private var bluetoothGatt: BluetoothGatt? = null
 
     fun connect(device: BluetoothDevice) {
         disconnect()
-
         bluetoothGatt = connectGatt(device)
     }
 
     fun disconnect() {
-        pendingNotificationCharacteristics.clear()
-
         bluetoothGatt?.disconnect()
         bluetoothGatt?.close()
         bluetoothGatt = null
@@ -51,6 +68,87 @@ class XiaomiBleConnection(
         )
     }
 
+    @SuppressLint("MissingPermission")
+    private fun configureFe95(
+        gatt: BluetoothGatt
+    ) {
+
+        val service =
+            gatt.getService(FE95_SERVICE)
+
+        if (service == null) {
+            onError(
+                "Servizio FE95 non trovato"
+            )
+            return
+        }
+
+        val readCharacteristic =
+            service.getCharacteristic(FE95_READ)
+
+        val writeCharacteristic =
+            service.getCharacteristic(FE95_WRITE)
+
+        if (readCharacteristic == null) {
+            onError(
+                "Caratteristica FE95/51 non trovata"
+            )
+            return
+        }
+
+        if (writeCharacteristic == null) {
+            onError(
+                "Caratteristica FE95/52 non trovata"
+            )
+            return
+        }
+
+        onDebug(
+            ">>> CANALE XIAOMI FE95 IDENTIFICATO\n" +
+                "READ/NOTIFY: ${readCharacteristic.uuid}\n" +
+                "WRITE: ${writeCharacteristic.uuid}"
+        )
+
+        val notificationEnabled =
+            gatt.setCharacteristicNotification(
+                readCharacteristic,
+                true
+            )
+
+        if (!notificationEnabled) {
+            onError(
+                "setCharacteristicNotification(FE95/51) fallito"
+            )
+            return
+        }
+
+        val descriptor =
+            readCharacteristic.getDescriptor(
+                CLIENT_CONFIG
+            )
+
+        if (descriptor == null) {
+            onError(
+                "CCCD FE95/51 non trovato"
+            )
+            return
+        }
+
+        descriptor.value =
+            BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+
+        if (!gatt.writeDescriptor(descriptor)) {
+            onError(
+                "Scrittura CCCD FE95/51 fallita"
+            )
+            return
+        }
+
+        onDebug(
+            ">>> NOTIFY FE95/51 RICHIESTA"
+        )
+    }
+
     private val gattCallback =
         object : BluetoothGattCallback() {
 
@@ -59,9 +157,11 @@ class XiaomiBleConnection(
                 status: Int,
                 newState: Int
             ) {
+
                 when (newState) {
 
                     BluetoothProfile.STATE_CONNECTED -> {
+
                         bluetoothGatt = gatt
 
                         onDebug(
@@ -77,11 +177,10 @@ class XiaomiBleConnection(
                     }
 
                     BluetoothProfile.STATE_DISCONNECTED -> {
+
                         if (bluetoothGatt == gatt) {
                             bluetoothGatt = null
                         }
-
-                        pendingNotificationCharacteristics.clear()
 
                         gatt.close()
 
@@ -93,143 +192,40 @@ class XiaomiBleConnection(
                     status != BluetoothGatt.GATT_SUCCESS &&
                     newState != BluetoothProfile.STATE_DISCONNECTED
                 ) {
+
                     onError(
                         "Errore GATT: status=$status"
                     )
                 }
             }
 
+            @SuppressLint("MissingPermission")
             override fun onServicesDiscovered(
                 gatt: BluetoothGatt,
                 status: Int
             ) {
-                if (status != BluetoothGatt.GATT_SUCCESS) {
+
+                if (
+                    status !=
+                    BluetoothGatt.GATT_SUCCESS
+                ) {
+
                     onError(
                         "Service discovery fallita: status=$status"
                     )
+
                     return
                 }
 
                 onConnected()
 
-                val result =
-                    StringBuilder()
-
-                result.append(
-                    ">>> SERVIZI XIAOMI IDENTIFICATI\n\n"
-                )
-
-                var foundXiaomiService = false
-
-                for (service in gatt.services) {
-
-                    val uuid =
-                        service.uuid.toString()
-
-                    val isFdab =
-                        uuid.startsWith(
-                            "0000fdab-",
-                            ignoreCase = true
-                        )
-
-                    val isFe95 =
-                        uuid.startsWith(
-                            "0000fe95-",
-                            ignoreCase = true
-                        )
-
-                    if (!isFdab && !isFe95) {
-                        continue
-                    }
-
-                    foundXiaomiService = true
-
-                    result.append(
-                        "SERVICE "
-                    )
-
-                    result.append(
-                        if (isFdab) {
-                            "FDAB"
-                        } else {
-                            "FE95"
-                        }
-                    )
-
-                    result.append(
-                        "\n"
-                    )
-
-                    result.append(
-                        uuid
-                    )
-
-                    result.append(
-                        "\n\n"
-                    )
-
-                    for (
-                        characteristic
-                        in service.characteristics
-                    ) {
-
-                        result.append(
-                            "CHAR\n"
-                        )
-
-                        result.append(
-                            characteristic.uuid
-                        )
-
-                        result.append(
-                            "\n"
-                        )
-
-                        result.append(
-                            "properties="
-                        )
-
-                        result.append(
-                            characteristic.properties
-                        )
-
-                        result.append(
-                            "\n"
-                        )
-
-                        result.append(
-                            "permissions="
-                        )
-
-                        result.append(
-                            propertyNames(
-                                characteristic
-                            )
-                        )
-
-                        result.append(
-                            "\n\n"
-                        )
-                    }
-
-                    result.append(
-                        "\n"
-                    )
-                }
-
-                if (!foundXiaomiService) {
-                    result.append(
-                        "Nessun servizio Xiaomi FDAB/FE95 trovato.\n"
-                    )
-                }
-
                 onDebug(
-                    result.toString()
+                    ">>> SERVICE DISCOVERY COMPLETATA"
                 )
+
+                configureFe95(gatt)
 
                 onServicesDiscovered(gatt)
-
-                enableFdabNotifications(gatt)
             }
 
             override fun onDescriptorWrite(
@@ -237,258 +233,62 @@ class XiaomiBleConnection(
                 descriptor: BluetoothGattDescriptor,
                 status: Int
             ) {
-                if (
-                    status == BluetoothGatt.GATT_SUCCESS
-                ) {
-                    onDebug(
-                        ">>> NOTIFY ABILITATA\n" +
-                            descriptor.characteristic.uuid
-                    )
-                } else {
-                    onError(
-                        "Abilitazione notify fallita: " +
-                            descriptor.characteristic.uuid +
-                            " status=$status"
-                    )
-                }
 
-                enableNextNotification(gatt)
+                if (
+                    descriptor.uuid == CLIENT_CONFIG
+                ) {
+
+                    if (
+                        status ==
+                        BluetoothGatt.GATT_SUCCESS
+                    ) {
+
+                        onDebug(
+                            ">>> NOTIFY FE95/51 ABILITATA"
+                        )
+
+                    } else {
+
+                        onError(
+                            "CCCD FE95/51 fallito: status=$status"
+                        )
+                    }
+                }
             }
 
             override fun onCharacteristicChanged(
                 gatt: BluetoothGatt,
-                characteristic: BluetoothGattCharacteristic,
-                value: ByteArray
+                characteristic: BluetoothGattCharacteristic
             ) {
+
+                if (
+                    characteristic.uuid != FE95_READ
+                ) {
+                    return
+                }
+
+                val data =
+                    characteristic.value
+
                 onDebug(
-                    ">>> NOTIFICA BLE\n" +
-                        "CHAR: ${characteristic.uuid}\n" +
-                        "DATA: ${bytesToHex(value)}"
+                    ">>> NOTIFICA FE95/51\n" +
+                        "DATA: ${toHex(data)}"
                 )
             }
         }
 
-    @SuppressLint("MissingPermission")
-    private fun enableFdabNotifications(
-        gatt: BluetoothGatt
-    ) {
-
-        pendingNotificationCharacteristics.clear()
-
-        val fdab =
-            gatt.services.firstOrNull {
-                it.uuid.toString().startsWith(
-                    "0000fdab-",
-                    ignoreCase = true
-                )
-            }
-
-        if (fdab == null) {
-            onDebug(
-                ">>> FDAB NON TROVATO"
-            )
-            return
-        }
-
-        for (characteristic in fdab.characteristics) {
-
-            val uuid =
-                characteristic.uuid.toString()
-
-            val isTarget =
-                uuid.startsWith(
-                    "00000002-",
-                    ignoreCase = true
-                ) ||
-                uuid.startsWith(
-                    "00000003-",
-                    ignoreCase = true
-                )
-
-            if (
-                isTarget &&
-                characteristic.properties and
-                    BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0
-            ) {
-                pendingNotificationCharacteristics.add(
-                    characteristic
-                )
-            }
-        }
-
-        if (pendingNotificationCharacteristics.isEmpty()) {
-            onDebug(
-                ">>> FDAB/0002 E FDAB/0003 " +
-                    "SENZA NOTIFY"
-            )
-            return
-        }
-
-        enableNextNotification(gatt)
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun enableNextNotification(
-        gatt: BluetoothGatt
-    ) {
-
-        if (
-            pendingNotificationCharacteristics.isEmpty()
-        ) {
-            onDebug(
-                ">>> NOTIFICHE FDAB CONFIGURATE"
-            )
-            return
-        }
-
-        val characteristic =
-            pendingNotificationCharacteristics.removeFirst()
-
-        val localEnabled =
-            gatt.setCharacteristicNotification(
-                characteristic,
-                true
-            )
-
-        if (!localEnabled) {
-            onError(
-                "setCharacteristicNotification fallita: " +
-                    characteristic.uuid
-            )
-
-            enableNextNotification(gatt)
-            return
-        }
-
-        val descriptor =
-            characteristic.getDescriptor(
-                CCCD_UUID
-            )
-
-        if (descriptor == null) {
-            onError(
-                "CCCD non trovato: " +
-                    characteristic.uuid
-            )
-
-            enableNextNotification(gatt)
-            return
-        }
-
-        val started =
-            gatt.writeDescriptor(
-                descriptor,
-                BluetoothGattDescriptor
-                    .ENABLE_NOTIFICATION_VALUE
-            )
-
-        if (
-            started !=
-            BluetoothGatt.GATT_SUCCESS
-        ) {
-            onError(
-                "writeDescriptor fallita: " +
-                    characteristic.uuid +
-                    " status=$started"
-            )
-
-            enableNextNotification(gatt)
-        }
-    }
-
-    private fun propertyNames(
-        characteristic: BluetoothGattCharacteristic
+    private fun toHex(
+        data: ByteArray
     ): String {
 
-        val properties =
-            characteristic.properties
-
-        val names =
-            ArrayList<String>()
-
-        if (
-            properties and
-            BluetoothGattCharacteristic.PROPERTY_READ
-            != 0
-        ) {
-            names.add("READ")
+        if (data.isEmpty()) {
+            return "(vuota)"
         }
 
-        if (
-            properties and
-            BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE
-            != 0
-        ) {
-            names.add("WRITE_NO_RESPONSE")
-        }
-
-        if (
-            properties and
-            BluetoothGattCharacteristic.PROPERTY_WRITE
-            != 0
-        ) {
-            names.add("WRITE")
-        }
-
-        if (
-            properties and
-            BluetoothGattCharacteristic.PROPERTY_NOTIFY
-            != 0
-        ) {
-            names.add("NOTIFY")
-        }
-
-        if (
-            properties and
-            BluetoothGattCharacteristic.PROPERTY_INDICATE
-            != 0
-        ) {
-            names.add("INDICATE")
-        }
-
-        if (
-            properties and
-            BluetoothGattCharacteristic.PROPERTY_SIGNED_WRITE
-            != 0
-        ) {
-            names.add("SIGNED_WRITE")
-        }
-
-        if (
-            properties and
-            BluetoothGattCharacteristic.PROPERTY_EXTENDED_PROPS
-            != 0
-        ) {
-            names.add("EXTENDED_PROPS")
-        }
-
-        if (names.isEmpty()) {
-            return "NONE"
-        }
-
-        return names.joinToString(
-            separator = " + "
-        )
-    }
-
-    private fun bytesToHex(
-        value: ByteArray
-    ): String {
-
-        return value.joinToString(
-            separator = " "
-        ) {
+        return data.joinToString(" ") {
             "%02X".format(
                 it.toInt() and 0xFF
             )
         }
-    }
-
-    companion object {
-
-        private val CCCD_UUID =
-            UUID.fromString(
-                "00002902-0000-1000-8000-00805f9b34fb"
-            )
     }
 }
