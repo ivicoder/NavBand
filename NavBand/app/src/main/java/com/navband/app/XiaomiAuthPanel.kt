@@ -2,6 +2,7 @@ package com.navband.app
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
@@ -15,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -25,6 +27,10 @@ fun XiaomiAuthPanel(
 
     var authKey by remember {
         mutableStateOf("")
+    }
+
+    var showAuthKey by remember {
+        mutableStateOf(false)
     }
 
     var message by remember {
@@ -61,21 +67,51 @@ fun XiaomiAuthPanel(
                 Text("Auth key")
             },
             singleLine = true,
-            visualTransformation = PasswordVisualTransformation()
+            visualTransformation =
+                if (showAuthKey) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                }
         )
 
-        Button(
-            onClick = {
-                if (onSave(authKey)) {
-                    authKey = ""
-                    message = "Auth key salvata correttamente"
-                } else {
-                    message =
-                        "Errore: servono esattamente 32 caratteri HEX"
-                }
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("Salva auth key")
+
+            Button(
+                onClick = {
+                    showAuthKey = !showAuthKey
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    if (showAuthKey) {
+                        "Nascondi"
+                    } else {
+                        "Mostra"
+                    }
+                )
+            }
+
+            Button(
+                onClick = {
+
+                    if (onSave(authKey)) {
+                        authKey = ""
+                        showAuthKey = false
+                        message =
+                            "Auth key salvata correttamente"
+                    } else {
+                        message =
+                            "Errore: servono esattamente 32 caratteri HEX"
+                    }
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Salva")
+            }
         }
 
         Text(message)
