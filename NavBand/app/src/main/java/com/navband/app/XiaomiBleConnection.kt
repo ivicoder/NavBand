@@ -332,7 +332,7 @@ class XiaomiBleConnection(
             waitingForChunkStartAck = false
 
             onDebug(
-                ">>> XIAOMI CHUNK TRASMISSION COMPLETATA"
+                ">>> XIAOMI CHUNK TRASMISSIONE COMPLETATA"
             )
 
             return
@@ -387,7 +387,7 @@ class XiaomiBleConnection(
 
         characteristic.writeType =
             BluetoothGattCharacteristic
-                .WRITE_TYPE_DEFAULT
+                .WRITE_TYPE_NO_RESPONSE
 
         characteristic.value = data
 
@@ -437,123 +437,18 @@ class XiaomiBleConnection(
                 buffer
             )
 
-            return
-        }
+        } else {
 
-        val type =
-            buffer.get().toInt() and 0xFF
-
-        when (type) {
-
-            0 -> {
-                handleIncomingChunkStart(
-                    buffer
-                )
-            }
-
-            1 -> {
-                handleIncomingAck(
-                    buffer
-                )
-            }
-
-            2 -> {
-                handleIncomingSingleCommand(
-                    buffer
-                )
-            }
-
-            3 -> {
-                onDebug(
-                    ">>> XIAOMI ACK\n" +
-                        "DATA: ${toHex(data)}"
-                )
-            }
-
-            else -> {
-                onDebug(
-                    ">>> XIAOMI FRAME UNKNOWN\n" +
-                        "TYPE: $type\n" +
-                        "DATA: ${toHex(data)}"
-                )
-            }
-        }
-    }
-
-    private fun handleIncomingChunkStart(
-        buffer: ByteBuffer
-    ) {
-
-        if (buffer.remaining() < 3) {
-            onError(
-                "Xiaomi chunk start non valido"
+            handleIncomingAck(
+                buffer
             )
-            return
         }
-
-        val encrypted =
-            buffer.get().toInt() and 0xFF
-
-        incomingChunkCount =
-            buffer.short.toInt() and 0xFFFF
-
-        incomingChunks.clear()
-
-        onDebug(
-            ">>> XIAOMI CHUNK START RICEVUTO\n" +
-                "ENCRYPTED: $encrypted\n" +
-                "CHUNKS: $incomingChunkCount"
-        )
-
-        sendChunkStartAck()
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun sendChunkStartAck() {
-
-        val characteristic =
-            writeCharacteristic
-                ?: return
-
-        val ack =
-            byteArrayOf(
-                0x00,
-                0x00,
-                0x01,
-                0x01
-            )
-
-        onDebug(
-            ">>> XIAOMI CHUNK START ACK"
-        )
-
-        writeRaw(
-            characteristic,
-            ack
-        )
     }
 
     private fun handleIncomingChunk(
         chunk: Int,
         buffer: ByteBuffer
     ) {
-
-        if (incomingChunkCount <= 0) {
-            onDebug(
-                ">>> CHUNK RICEVUTO SENZA START: $chunk"
-            )
-            return
-        }
-
-        if (
-            chunk < 1 ||
-            chunk > incomingChunkCount
-        ) {
-            onError(
-                "Chunk Xiaomi non valido: $chunk"
-            )
-            return
-        }
 
         val payload =
             ByteArray(
@@ -562,53 +457,63 @@ class XiaomiBleConnection(
 
         buffer.get(payload)
 
-        incomingChunks[chunk] =
-            payload
+        incomingChunks[chunk] = payload
 
         onDebug(
-            ">>> XIAOMI CHUNK RICEVUTO " +
-                "$chunk/$incomingChunkCount"
+            ">>> XIAOMI CHUNK RICEVUTO $chunk\n" +
+                "DATA: ${toHex(payload)}"
         )
 
         if (
-            incomingChunks.size ==
+            incomingChunkCount > 0 &&
+            incomingChunks.size >=
             incomingChunkCount
         ) {
 
-            val reconstructed =
-                reconstructIncomingPayload()
+            val complete =
+                assembleIncomingChunks()
 
-            incomingChunkCount = 0
             incomingChunks.clear()
 
-            if (reconstructed.isEmpty()) {
-                onError(
-                    "Payload Xiaomi ricostruito vuoto"
-                )
-                return
-            }
-
             onDebug(
-                ">>> XIAOMI PAYLOAD RICOSTRUITO\n" +
-                    "SIZE: ${reconstructed.size}\n" +
-                    "DATA: ${toHex(reconstructed)}"
+                ">>> XIAOMI PAYLOAD COMPLETO\n" +
+                    "DATA: ${toHex(complete)}"
             )
 
-            handleXiaomiCommand(
-                reconstructed
+            handleIncomingCompletePayload(
+                complete
             )
-
-            sendChunkEndAck()
         }
     }
 
-    private fun reconstructIncomingPayload():
+    private fun handleIncomingCompletePayload(
+        payload: ByteArray
+    ) {
+
+        if (payload.isEmpty()) {
+            return
+        }
+
+        handleXiaomiCommand(
+            payload
+        )
+    }
+
+    private fun assembleIncomingChunks():
         ByteArray {
+
+        if (incomingChunks.isEmpty()) {
+            return ByteArray(0)
+        }
 
         val output =
             ArrayList<Byte>()
 
-        for (index in 1..incomingChunkCount) {
+        val maxChunk =
+            incomingChunks.keys.maxOrNull()
+                ?: return ByteArray(0)
+
+        for (index in 1..maxChunk) {
 
             val chunk =
                 incomingChunks[index]
