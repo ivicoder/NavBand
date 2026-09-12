@@ -9,7 +9,9 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -40,6 +42,38 @@ class MainActivity : ComponentActivity() {
     )
 
     private var showBluetoothScreen by mutableStateOf(false)
+
+    private val exportLogLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.CreateDocument("text/plain")
+        ) { uri ->
+            if (uri == null) {
+                return@registerForActivityResult
+            }
+
+            try {
+                val logText =
+                    bluetoothResults.joinToString("\n\n")
+
+                contentResolver.openOutputStream(uri)?.use { output ->
+                    output.write(
+                        logText.toByteArray(Charsets.UTF_8)
+                    )
+                }
+
+                Toast.makeText(
+                    this,
+                    "Log esportato",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this,
+                    "Errore esportazione log: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -356,6 +390,17 @@ class MainActivity : ComponentActivity() {
                 }
             ) {
                 Text("Nuova scansione")
+            }
+
+            Button(
+                onClick = {
+                    exportLogLauncher.launch(
+                        "NavBand_log.txt"
+                    )
+                },
+                enabled = bluetoothResults.isNotEmpty()
+            ) {
+                Text("Esporta log")
             }
 
             Button(
