@@ -391,12 +391,24 @@ class XiaomiBleConnection(
 
         characteristic.value = data
 
+        onDebug(
+            ">>> FE95 WRITE\\n" +
+                "UUID: ${characteristic.uuid}\\n" +
+                "WRITE TYPE: ${characteristic.writeType}\\n" +
+                "SIZE: ${data.size}\\n" +
+                "DATA: ${toHex(data)}"
+        )
+
         val success =
             bluetoothGatt
                 ?.writeCharacteristic(
                     characteristic
                 )
                 ?: false
+
+        onDebug(
+            ">>> FE95 WRITE RESULT: $success"
+        )
 
         if (!success) {
 
