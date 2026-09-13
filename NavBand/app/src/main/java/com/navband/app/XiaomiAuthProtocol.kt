@@ -1,5 +1,7 @@
 package com.navband.app
 
+import android.util.Log
+
 import android.os.Build
 import org.bouncycastle.crypto.CryptoException
 import org.bouncycastle.crypto.engines.AESEngine
@@ -147,28 +149,32 @@ class XiaomiAuthProtocol(
                 .digest(authKey)
                 .copyOfRange(0, 8)
 
-        println(
+        Log.d(
+            "NavBandAuth",
             ">>> XIAOMI AUTH KEY FINGERPRINT: " +
                 authKeyFingerprint.joinToString("") {
                     "%02X".format(it)
                 }
         )
 
-        println(
+        Log.d(
+            "NavBandAuth",
             ">>> XIAOMI PHONE NONCE: " +
                 phoneNonce.joinToString("") {
                     "%02X".format(it)
                 }
         )
 
-        println(
+        Log.d(
+            "NavBandAuth",
             ">>> XIAOMI WATCH NONCE: " +
                 watchNonce.nonce.joinToString("") {
                     "%02X".format(it)
                 }
         )
 
-        println(
+        Log.d(
+            "NavBandAuth",
             ">>> XIAOMI WATCH HMAC: " +
                 watchNonce.hmac.joinToString("") {
                     "%02X".format(it)
@@ -209,14 +215,16 @@ class XiaomiAuthProtocol(
                 )
             )
 
-        println(
+        Log.d(
+            "NavBandAuth",
             ">>> XIAOMI EXPECTED HMAC: " +
                 expectedHmac.joinToString("") {
                     "%02X".format(it)
                 }
         )
 
-        println(
+        Log.d(
+            "NavBandAuth",
             ">>> XIAOMI HMAC MATCH: " +
                 expectedHmac.contentEquals(watchNonce.hmac)
         )
