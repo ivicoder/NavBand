@@ -194,32 +194,6 @@ class XiaomiBleConnection(
         onDebug(
             ">>> NOTIFY FE95/51 RICHIESTA"
         )
-
-        val writeCccd =
-            write.getDescriptor(
-                CLIENT_CONFIG
-            )
-
-        if (writeCccd == null) {
-            onError(
-                "CCCD FE95/52 non trovato"
-            )
-            return
-        }
-
-        writeCccd.value =
-            BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-
-        if (!gatt.writeDescriptor(writeCccd)) {
-            onError(
-                "Scrittura CCCD FE95/52 fallita"
-            )
-            return
-        }
-
-        onDebug(
-            ">>> NOTIFY FE95/52 RICHIESTA"
-        )
     }
 
     @SuppressLint("MissingPermission")
@@ -413,7 +387,7 @@ class XiaomiBleConnection(
 
         characteristic.writeType =
             BluetoothGattCharacteristic
-                .WRITE_TYPE_DEFAULT
+                .WRITE_TYPE_NO_RESPONSE
 
         characteristic.value = data
 
@@ -808,6 +782,7 @@ class XiaomiBleConnection(
                 onServicesDiscovered(gatt)
             }
 
+            @SuppressLint("MissingPermission")
             override fun onDescriptorWrite(
                 gatt: BluetoothGatt,
                 descriptor: BluetoothGattDescriptor,
@@ -821,23 +796,90 @@ class XiaomiBleConnection(
                     return
                 }
 
+                val characteristicUuid =
+                    descriptor.characteristic.uuid
+
                 if (
-                    status ==
+                    status !=
                     BluetoothGatt.GATT_SUCCESS
+                ) {
+
+                    onError(
+                        "CCCD $characteristicUuid fallito: " +
+                            "status=$status"
+                    )
+
+                    return
+                }
+
+                if (
+                    characteristicUuid ==
+                    FE95_READ
                 ) {
 
                     onDebug(
                         ">>> NOTIFY FE95/51 ABILITATA"
                     )
 
-                    startAuthentication()
+                    val write =
+                        writeCharacteristic
+                            ?: run {
+                                onError(
+                                    "FE95/52 non disponibile"
+                                )
+                                return
+                            }
 
-                } else {
+                    val notificationEnabled =
+                        gatt.setCharacteristicNotification(
+                            write,
+                            true
+                        )
 
-                    onError(
-                        "CCCD FE95/51 fallito: " +
-                            "status=$status"
+                    if (!notificationEnabled) {
+                        onError(
+                            "setCharacteristicNotification(FE95/52) fallito"
+                        )
+                        return
+                    }
+
+                    val writeCccd =
+                        write.getDescriptor(
+                            CLIENT_CONFIG
+                        )
+
+                    if (writeCccd == null) {
+                        onError(
+                            "CCCD FE95/52 non trovato"
+                        )
+                        return
+                    }
+
+                    writeCccd.value =
+                        BluetoothGattDescriptor
+                            .ENABLE_NOTIFICATION_VALUE
+
+                    if (!gatt.writeDescriptor(writeCccd)) {
+                        onError(
+                            "Scrittura CCCD FE95/52 fallita"
+                        )
+                        return
+                    }
+
+                    onDebug(
+                        ">>> NOTIFY FE95/52 RICHIESTA"
                     )
+
+                } else if (
+                    characteristicUuid ==
+                    FE95_WRITE
+                ) {
+
+                    onDebug(
+                        ">>> NOTIFY FE95/52 ABILITATA"
+                    )
+
+                    startAuthentication()
                 }
             }
 
