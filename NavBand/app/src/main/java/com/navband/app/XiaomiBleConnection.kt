@@ -387,7 +387,7 @@ class XiaomiBleConnection(
 
         characteristic.writeType =
             BluetoothGattCharacteristic
-                .WRITE_TYPE_NO_RESPONSE
+                .WRITE_TYPE_DEFAULT
 
         characteristic.value = data
 
