@@ -233,7 +233,7 @@ class XiaomiBleConnection(
                 "DATA: ${toHex(firstCommand)}"
         )
 
-        sendChunked(
+        sendSingleCommand(
             firstCommand
         )
     }
@@ -449,11 +449,41 @@ class XiaomiBleConnection(
                 buffer
             )
 
-        } else {
+            return
+        }
 
-            handleIncomingAck(
-                buffer
-            )
+        if (!buffer.hasRemaining()) {
+            return
+        }
+
+        val type =
+            buffer.get().toInt() and 0xFF
+
+        when (type) {
+
+            1 -> {
+                handleIncomingAck(
+                    buffer
+                )
+            }
+
+            2 -> {
+                handleIncomingSingleCommand(
+                    buffer
+                )
+            }
+
+            3 -> {
+                handleIncomingAck(
+                    buffer
+                )
+            }
+
+            else -> {
+                onDebug(
+                    ">>> XIAOMI TIPO PACCHETTO NON GESTITO: $type"
+                )
+            }
         }
     }
 
@@ -612,6 +642,57 @@ class XiaomiBleConnection(
         }
     }
 
+    @SuppressLint("MissingPermission")
+    private fun sendSingleCommand(
+        payload: ByteArray
+    ) {
+
+        val characteristic =
+            writeCharacteristic
+                ?: run {
+                    onError(
+                        "FE95/52 non disponibile"
+                    )
+                    return
+                }
+
+        if (payload.isEmpty()) {
+            onError(
+                "Payload Xiaomi vuoto"
+            )
+            return
+        }
+
+        val packet =
+            ByteArray(
+                4 + payload.size
+            )
+
+        packet[0] = 0x00
+        packet[1] = 0x00
+        packet[2] = 0x02
+        packet[3] = 0x02
+
+        System.arraycopy(
+            payload,
+            0,
+            packet,
+            4,
+            payload.size
+        )
+
+        onDebug(
+            ">>> XIAOMI SINGLE COMMAND\n" +
+                "DATA: ${toHex(packet)}"
+        )
+
+        writeRaw(
+            characteristic,
+            packet
+        )
+    }
+
+    @SuppressLint("MissingPermission")
     private fun handleIncomingSingleCommand(
         buffer: ByteBuffer
     ) {
@@ -631,9 +712,31 @@ class XiaomiBleConnection(
         buffer.get(payload)
 
         onDebug(
-            ">>> XIAOMI SINGLE COMMAND\n" +
+            ">>> XIAOMI SINGLE COMMAND RICEVUTO\n" +
                 "ENCRYPTION: $encryption\n" +
                 "DATA: ${toHex(payload)}"
+        )
+
+        val characteristic =
+            writeCharacteristic
+                ?: return
+
+        val ack =
+            byteArrayOf(
+                0x00,
+                0x00,
+                0x03,
+                0x00
+            )
+
+        onDebug(
+            ">>> XIAOMI SINGLE COMMAND ACK\n" +
+                "DATA: ${toHex(ack)}"
+        )
+
+        writeRaw(
+            characteristic,
+            ack
         )
 
         handleXiaomiCommand(
