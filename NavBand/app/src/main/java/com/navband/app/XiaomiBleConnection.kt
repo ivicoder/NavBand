@@ -742,9 +742,16 @@ class XiaomiBleConnection(
             ack
         )
 
-        handleXiaomiCommand(
-            payload
-        )
+        /*
+         * L'ACK viene inviato con WRITE_TYPE_NO_RESPONSE.
+         * Non avviamo subito la successiva CHUNK START: lasciamo
+         * terminare la transazione GATT precedente.
+         */
+        android.os.Handler(
+            android.os.Looper.getMainLooper()
+        ).postDelayed({
+            handleXiaomiCommand(payload)
+        }, 100)
     }
 
     private fun handleXiaomiCommand(
