@@ -348,9 +348,9 @@ class XiaomiAuthProtocol(
                 FIELD_DEVICE_UNKNOWN1,
                 0
             ),
-            fieldVarint(
+            fieldFixed32(
                 FIELD_DEVICE_API_LEVEL,
-                Build.VERSION.SDK_INT.toLong()
+                Build.VERSION.SDK_INT.toFloat().toBits()
             ),
             fieldString(
                 FIELD_DEVICE_PHONE_NAME,
