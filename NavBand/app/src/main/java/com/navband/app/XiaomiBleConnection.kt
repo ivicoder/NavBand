@@ -216,7 +216,10 @@ class XiaomiBleConnection(
         }
 
         authProtocol =
-            XiaomiAuthProtocol(authKey)
+            XiaomiAuthProtocol(
+                authKey = authKey,
+                onDebug = onDebug
+            )
 
         authStarted = true
 

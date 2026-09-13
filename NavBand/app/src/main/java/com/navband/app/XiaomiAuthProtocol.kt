@@ -18,7 +18,8 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 class XiaomiAuthProtocol(
-    private val authKey: ByteArray
+    private val authKey: ByteArray,
+    private val onDebug: (String) -> Unit = {}
 ) {
 
     companion object {
@@ -149,32 +150,28 @@ class XiaomiAuthProtocol(
                 .digest(authKey)
                 .copyOfRange(0, 8)
 
-        Log.d(
-            "NavBandAuth",
+        onDebug(
             ">>> XIAOMI AUTH KEY FINGERPRINT: " +
                 authKeyFingerprint.joinToString("") {
                     "%02X".format(it)
                 }
         )
 
-        Log.d(
-            "NavBandAuth",
+        onDebug(
             ">>> XIAOMI PHONE NONCE: " +
                 phoneNonce.joinToString("") {
                     "%02X".format(it)
                 }
         )
 
-        Log.d(
-            "NavBandAuth",
+        onDebug(
             ">>> XIAOMI WATCH NONCE: " +
                 watchNonce.nonce.joinToString("") {
                     "%02X".format(it)
                 }
         )
 
-        Log.d(
-            "NavBandAuth",
+        onDebug(
             ">>> XIAOMI WATCH HMAC: " +
                 watchNonce.hmac.joinToString("") {
                     "%02X".format(it)
@@ -215,16 +212,14 @@ class XiaomiAuthProtocol(
                 )
             )
 
-        Log.d(
-            "NavBandAuth",
+        onDebug(
             ">>> XIAOMI EXPECTED HMAC: " +
                 expectedHmac.joinToString("") {
                     "%02X".format(it)
                 }
         )
 
-        Log.d(
-            "NavBandAuth",
+        onDebug(
             ">>> XIAOMI HMAC MATCH: " +
                 expectedHmac.contentEquals(watchNonce.hmac)
         )
