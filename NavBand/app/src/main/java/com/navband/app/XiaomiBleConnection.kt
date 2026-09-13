@@ -194,6 +194,32 @@ class XiaomiBleConnection(
         onDebug(
             ">>> NOTIFY FE95/51 RICHIESTA"
         )
+
+        val writeCccd =
+            write.getDescriptor(
+                CLIENT_CONFIG
+            )
+
+        if (writeCccd == null) {
+            onError(
+                "CCCD FE95/52 non trovato"
+            )
+            return
+        }
+
+        writeCccd.value =
+            BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+
+        if (!gatt.writeDescriptor(writeCccd)) {
+            onError(
+                "Scrittura CCCD FE95/52 fallita"
+            )
+            return
+        }
+
+        onDebug(
+            ">>> NOTIFY FE95/52 RICHIESTA"
+        )
     }
 
     @SuppressLint("MissingPermission")
@@ -915,8 +941,8 @@ class XiaomiBleConnection(
             ) {
 
                 if (
-                    characteristic.uuid !=
-                    FE95_READ
+                    characteristic.uuid != FE95_READ &&
+                    characteristic.uuid != FE95_WRITE
                 ) {
                     return
                 }
@@ -925,7 +951,7 @@ class XiaomiBleConnection(
                     characteristic.value
 
                 onDebug(
-                    ">>> NOTIFICA FE95/51\n" +
+                    ">>> NOTIFICA ${characteristic.uuid}\n" +
                         "DATA: ${toHex(data)}"
                 )
 
