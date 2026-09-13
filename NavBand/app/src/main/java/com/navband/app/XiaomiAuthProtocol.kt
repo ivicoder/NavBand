@@ -9,6 +9,7 @@ import org.bouncycastle.crypto.params.KeyParameter
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Locale
 import javax.crypto.Mac
@@ -140,6 +141,40 @@ class XiaomiAuthProtocol(
             )
         }
 
+        val authKeyFingerprint =
+            MessageDigest
+                .getInstance("SHA-256")
+                .digest(authKey)
+                .copyOfRange(0, 8)
+
+        println(
+            ">>> XIAOMI AUTH KEY FINGERPRINT: " +
+                authKeyFingerprint.joinToString("") {
+                    "%02X".format(it)
+                }
+        )
+
+        println(
+            ">>> XIAOMI PHONE NONCE: " +
+                phoneNonce.joinToString("") {
+                    "%02X".format(it)
+                }
+        )
+
+        println(
+            ">>> XIAOMI WATCH NONCE: " +
+                watchNonce.nonce.joinToString("") {
+                    "%02X".format(it)
+                }
+        )
+
+        println(
+            ">>> XIAOMI WATCH HMAC: " +
+                watchNonce.hmac.joinToString("") {
+                    "%02X".format(it)
+                }
+        )
+
         val step2Hmac =
             computeAuthStep3Hmac(
                 secretKey = authKey,
@@ -173,6 +208,18 @@ class XiaomiAuthProtocol(
                     phoneNonce
                 )
             )
+
+        println(
+            ">>> XIAOMI EXPECTED HMAC: " +
+                expectedHmac.joinToString("") {
+                    "%02X".format(it)
+                }
+        )
+
+        println(
+            ">>> XIAOMI HMAC MATCH: " +
+                expectedHmac.contentEquals(watchNonce.hmac)
+        )
 
         if (!expectedHmac.contentEquals(watchNonce.hmac)) {
             return AuthResult.Error(
