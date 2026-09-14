@@ -8,6 +8,10 @@ import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothProfile
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
@@ -78,9 +82,183 @@ class XiaomiBleConnection(
 
     private var outgoingChunkInFlight = false
 
+    private var pendingBondDevice: BluetoothDevice? = null
+
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
+    private fun registerBondReceiver() {
+
+        val filter =
+            IntentFilter(
+                BluetoothDevice.ACTION_BOND_STATE_CHANGED
+            )
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(
+                bondReceiver,
+                filter,
+                Context.RECEIVER_EXPORTED
+            )
+        } else {
+            context.registerReceiver(
+                bondReceiver,
+                filter
+            )
+        }
+    }
+
+    private val bondReceiver =
+        object : BroadcastReceiver() {
+
+            override fun onReceive(
+                context: Context,
+                intent: Intent
+            ) {
+                if (
+                    intent.action !=
+                    BluetoothDevice.ACTION_BOND_STATE_CHANGED
+                ) {
+                    return
+                }
+
+                val device =
+                    intent.getParcelableExtra<BluetoothDevice>(
+                        BluetoothDevice.EXTRA_DEVICE
+                    ) ?: return
+
+                if (
+                    device.address !=
+                    pendingBondDevice?.address
+                ) {
+                    return
+                }
+
+                val state =
+                    intent.getIntExtra(
+                        BluetoothDevice.EXTRA_BOND_STATE,
+                        BluetoothDevice.ERROR
+                    )
+
+                when (state) {
+
+                    BluetoothDevice.BOND_BONDING -> {
+                        onDebug(
+                            ">>> XIAOMI BOND STATE = BOND_BONDING"
+                        )
+                    }
+
+                    BluetoothDevice.BOND_BONDED -> {
+
+                        onDebug(
+                            ">>> XIAOMI BOND STATE = BOND_BONDED"
+                        )
+
+                        pendingBondDevice = null
+
+                        try {
+                            context.unregisterReceiver(
+                                this
+                            )
+                        } catch (_: Exception) {
+                        }
+
+                        onDebug(
+                            ">>> XIAOMI AVVIO GATT DOPO BONDING"
+                        )
+
+                        bluetoothGatt =
+                            connectGatt(device)
+                    }
+
+                    BluetoothDevice.BOND_NONE -> {
+
+                        onDebug(
+                            ">>> XIAOMI BOND STATE = BOND_NONE"
+                        )
+
+                        pendingBondDevice = null
+
+                        try {
+                            context.unregisterReceiver(
+                                this
+                            )
+                        } catch (_: Exception) {
+                        }
+
+                        onError(
+                            "Bonding Xiaomi fallito"
+                        )
+                    }
+                }
+            }
+        }
+
+    @SuppressLint("MissingPermission")
     fun connect(device: BluetoothDevice) {
+
         disconnect()
-        bluetoothGatt = connectGatt(device)
+
+        when (device.bondState) {
+
+            BluetoothDevice.BOND_BONDED -> {
+
+                onDebug(
+                    ">>> XIAOMI DEVICE GIA BONDATA"
+                )
+
+                bluetoothGatt =
+                    connectGatt(device)
+            }
+
+            BluetoothDevice.BOND_NONE -> {
+
+                onDebug(
+                    ">>> XIAOMI BONDING RICHIESTO"
+                )
+
+                pendingBondDevice = device
+
+                registerBondReceiver()
+
+                if (!device.createBond()) {
+
+                    onDebug(
+                        ">>> XIAOMI createBond() = false"
+                    )
+
+                    pendingBondDevice = null
+
+                    try {
+                        context.unregisterReceiver(
+                            bondReceiver
+                        )
+                    } catch (_: Exception) {
+                    }
+
+                    onError(
+                        "Avvio bonding Xiaomi fallito"
+                    )
+                }
+            }
+
+            BluetoothDevice.BOND_BONDING -> {
+
+                onDebug(
+                    ">>> XIAOMI DEVICE GIA IN BONDING"
+                )
+
+                pendingBondDevice = device
+
+                registerBondReceiver()
+            }
+
+            else -> {
+
+                onError(
+                    "Stato bonding Bluetooth sconosciuto: " +
+                        device.bondState
+                )
+            }
+        }
     }
 
     fun disconnect() {
