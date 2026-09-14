@@ -1040,6 +1040,19 @@ class XiaomiBleConnection(
 
                     BluetoothProfile.STATE_DISCONNECTED -> {
 
+                        onDebug(
+                            ">>> GATT DISCONNESSA\n" +
+                                "STATUS: $status\n" +
+                                "STATUS HEX: 0x%02X".format(status) +
+                                "\nBOND STATE: " +
+                                when (gatt.device.bondState) {
+                                    BluetoothDevice.BOND_NONE -> "BOND_NONE"
+                                    BluetoothDevice.BOND_BONDING -> "BOND_BONDING"
+                                    BluetoothDevice.BOND_BONDED -> "BOND_BONDED"
+                                    else -> "UNKNOWN(${gatt.device.bondState})"
+                                }
+                        )
+
                         if (
                             bluetoothGatt == gatt
                         ) {
