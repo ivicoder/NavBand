@@ -314,7 +314,7 @@ class XiaomiAuthProtocol(
         val authMessage =
             protoMessage(
                 fieldBytes(
-                    FIELD_AUTH_STEP3,
+                    32,
                     authStep3
                 )
             )
