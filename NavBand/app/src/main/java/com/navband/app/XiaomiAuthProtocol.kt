@@ -358,7 +358,7 @@ class XiaomiAuthProtocol(
             ),
             fieldVarint(
                 FIELD_DEVICE_UNKNOWN3,
-                224
+                25188066
             ),
             fieldString(
                 FIELD_DEVICE_REGION,
