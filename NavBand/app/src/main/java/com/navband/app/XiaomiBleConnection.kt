@@ -107,6 +107,16 @@ class XiaomiBleConnection(
         device: BluetoothDevice
     ): BluetoothGatt {
 
+        onDebug(
+            ">>> XIAOMI BOND STATE PRIMA DI connectGatt: " +
+                when (device.bondState) {
+                    BluetoothDevice.BOND_NONE -> "BOND_NONE"
+                    BluetoothDevice.BOND_BONDING -> "BOND_BONDING"
+                    BluetoothDevice.BOND_BONDED -> "BOND_BONDED"
+                    else -> "UNKNOWN(${device.bondState})"
+                }
+        )
+
         return device.connectGatt(
             context,
             false,
@@ -226,6 +236,18 @@ class XiaomiBleConnection(
         onDebug(
             ">>> XIAOMI AUTH AVVIATA"
         )
+
+        bluetoothGatt?.device?.let { device ->
+            onDebug(
+                ">>> XIAOMI BOND STATE PRIMA AUTH: " +
+                    when (device.bondState) {
+                        BluetoothDevice.BOND_NONE -> "BOND_NONE"
+                        BluetoothDevice.BOND_BONDING -> "BOND_BONDING"
+                        BluetoothDevice.BOND_BONDED -> "BOND_BONDED"
+                        else -> "UNKNOWN(${device.bondState})"
+                    }
+            )
+        }
 
         val firstCommand =
             authProtocol!!
