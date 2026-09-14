@@ -556,12 +556,15 @@ class XiaomiBleConnection(
         val packet =
             ByteBuffer
                 .allocate(
-                    2 + payload.size
+                    5 + payload.size
                 )
                 .order(ByteOrder.LITTLE_ENDIAN)
                 .putShort(
                     chunkNumber.toShort()
                 )
+                .put(0x00)
+                .put(0x02)
+                .put(0x02)
                 .put(payload)
                 .array()
 
