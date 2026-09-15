@@ -971,7 +971,12 @@ class XiaomiBleConnection(
         android.os.Handler(
             android.os.Looper.getMainLooper()
         ).postDelayed({
-            handleXiaomiCommand(payload)
+            if (encryption == 1) {
+                onDebug(">>> POST-AUTH: pacchetto cifrato ricevuto, avvio diagnostica")
+                authProtocol?.debugDecryptPostAuth(payload)
+            } else {
+                handleXiaomiCommand(payload)
+            }
         }, 100)
     }
 

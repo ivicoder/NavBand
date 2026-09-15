@@ -15,6 +15,8 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Locale
 import javax.crypto.Mac
+import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 class XiaomiAuthProtocol(
@@ -82,6 +84,48 @@ class XiaomiAuthProtocol(
         secureRandom.nextBytes(phoneNonce)
 
         return buildNonceCommand(phoneNonce)
+    }
+
+    fun debugDecryptPostAuth(payload: ByteArray) {
+        println(">>> POST-AUTH DEBUG payload size=${payload.size}")
+        println(">>> POST-AUTH DEBUG payload=${payload.joinToString("") { "%02X".format(it) }}")
+
+        val keys = listOf(
+            "decryptionKey" to decryptionKey,
+            "encryptionKey" to encryptionKey
+        )
+
+        for ((keyName, key) in keys) {
+            if (key == null || key.size != 16) {
+                println(">>> POST-AUTH DEBUG $keyName unavailable")
+                continue
+            }
+
+            try {
+                val cipher = Cipher.getInstance("AES/CTR/NoPadding")
+                cipher.init(
+                    Cipher.DECRYPT_MODE,
+                    javax.crypto.spec.SecretKeySpec(key, "AES"),
+                    IvParameterSpec(key)
+                )
+
+                for (offset in 0..4) {
+                    if (payload.size <= offset) continue
+
+                    val ciphertext = payload.copyOfRange(offset, payload.size)
+                    val plain = cipher.doFinal(ciphertext)
+
+                    println(
+                        ">>> POST-AUTH CTR key=$keyName offset=$offset " +
+                        "plain=${plain.joinToString("") { "%02X".format(it) }}"
+                    )
+                }
+            } catch (e: Exception) {
+                println(
+                    ">>> POST-AUTH CTR key=$keyName ERROR=${e.message}"
+                )
+            }
+        }
     }
 
     fun handleCommand(
