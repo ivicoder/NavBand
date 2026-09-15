@@ -1001,7 +1001,7 @@ class XiaomiBleConnection(
                     ">>> AUTH STEP 2 INVIATO"
                 )
 
-                sendChunked(
+                sendSingleCommand(
                     result.command
                 )
             }
