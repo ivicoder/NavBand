@@ -87,8 +87,11 @@ class XiaomiAuthProtocol(
     }
 
     fun debugDecryptPostAuth(payload: ByteArray) {
-        println(">>> POST-AUTH DEBUG payload size=${payload.size}")
-        println(">>> POST-AUTH DEBUG payload=${payload.joinToString("") { "%02X".format(it) }}")
+        onDebug(">>> POST-AUTH DEBUG payload size=${payload.size}")
+        onDebug(
+            ">>> POST-AUTH DEBUG payload=" +
+                payload.joinToString("") { "%02X".format(it) }
+        )
 
         val keys = listOf(
             "decryptionKey" to decryptionKey,
@@ -97,31 +100,31 @@ class XiaomiAuthProtocol(
 
         for ((keyName, key) in keys) {
             if (key == null || key.size != 16) {
-                println(">>> POST-AUTH DEBUG $keyName unavailable")
+                onDebug(">>> POST-AUTH DEBUG $keyName unavailable")
                 continue
             }
 
             try {
-                val cipher = Cipher.getInstance("AES/CTR/NoPadding")
-                cipher.init(
-                    Cipher.DECRYPT_MODE,
-                    javax.crypto.spec.SecretKeySpec(key, "AES"),
-                    IvParameterSpec(key)
-                )
-
                 for (offset in 0..4) {
                     if (payload.size <= offset) continue
+
+                    val cipher = Cipher.getInstance("AES/CTR/NoPadding")
+                    cipher.init(
+                        Cipher.DECRYPT_MODE,
+                        SecretKeySpec(key, "AES"),
+                        IvParameterSpec(key)
+                    )
 
                     val ciphertext = payload.copyOfRange(offset, payload.size)
                     val plain = cipher.doFinal(ciphertext)
 
-                    println(
+                    onDebug(
                         ">>> POST-AUTH CTR key=$keyName offset=$offset " +
-                        "plain=${plain.joinToString("") { "%02X".format(it) }}"
+                            "plain=${plain.joinToString("") { "%02X".format(it) }}"
                     )
                 }
             } catch (e: Exception) {
-                println(
+                onDebug(
                     ">>> POST-AUTH CTR key=$keyName ERROR=${e.message}"
                 )
             }
