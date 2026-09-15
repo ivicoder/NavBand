@@ -55,6 +55,12 @@ class XiaomiBleConnection(
     private var writeCharacteristic:
         BluetoothGattCharacteristic? = null
 
+    // Canale usato per rispondere all'ultimo messaggio ricevuto.
+    // FE95 reale usa canali bidirezionali distinti: 0x51 <-> handle 0x0004,
+    // 0x52 <-> handle 0x0007.
+    private var lastIncomingCharacteristic:
+        BluetoothGattCharacteristic? = null
+
     private var authProtocol:
         XiaomiAuthProtocol? = null
 
@@ -341,7 +347,11 @@ class XiaomiBleConnection(
         onDebug(
             ">>> CANALE XIAOMI FE95 IDENTIFICATO\n" +
                 "READ/NOTIFY: ${readCharacteristic.uuid}\n" +
-                "WRITE: ${write.uuid}"
+                "WRITE: ${write.uuid}\n" +
+                "READ PROPERTIES: ${readCharacteristic.properties}\n" +
+                "WRITE PROPERTIES: ${write.properties}\n" +
+                "READ HANDLE: ${readCharacteristic.instanceId}\n" +
+                "WRITE HANDLE: ${write.instanceId}"
         )
 
         val notificationEnabled =
@@ -781,7 +791,8 @@ class XiaomiBleConnection(
     private fun sendChunkEndAck() {
 
         val characteristic =
-            writeCharacteristic
+            lastIncomingCharacteristic
+                ?: writeCharacteristic
                 ?: return
 
         val ack =
@@ -919,12 +930,16 @@ class XiaomiBleConnection(
 
         onDebug(
             ">>> XIAOMI SINGLE COMMAND RICEVUTO\n" +
+                "INCOMING UUID: ${lastIncomingCharacteristic?.uuid}\n" +
+                "INCOMING HANDLE: ${lastIncomingCharacteristic?.instanceId}\n" +
                 "ENCRYPTION: $encryption\n" +
+                "PAYLOAD SIZE: ${payload.size}\n" +
                 "DATA: ${toHex(payload)}"
         )
 
         val characteristic =
-            writeCharacteristic
+            lastIncomingCharacteristic
+                ?: writeCharacteristic
                 ?: return
 
         val ack =
@@ -937,6 +952,9 @@ class XiaomiBleConnection(
 
         onDebug(
             ">>> XIAOMI SINGLE COMMAND ACK\n" +
+                "TARGET UUID: ${characteristic.uuid}\n" +
+                "TARGET HANDLE: ${characteristic.instanceId}\n" +
+                "WRITE TYPE: ${characteristic.writeType}\n" +
                 "DATA: ${toHex(ack)}"
         )
 
@@ -1318,11 +1336,17 @@ class XiaomiBleConnection(
                     return
                 }
 
+                lastIncomingCharacteristic = characteristic
+
                 val data =
                     characteristic.value
 
                 onDebug(
-                    ">>> NOTIFICA ${characteristic.uuid}\n" +
+                    ">>> NOTIFICA FE95\n" +
+                        "UUID: ${characteristic.uuid}\n" +
+                        "INSTANCE/HANDLE: ${characteristic.instanceId}\n" +
+                        "PROPERTIES: ${characteristic.properties}\n" +
+                        "SIZE: ${data.size}\n" +
                         "DATA: ${toHex(data)}"
                 )
 
