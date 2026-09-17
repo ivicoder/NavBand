@@ -1,4 +1,10 @@
 package com.navband.app
+import androidx.core.app.NotificationCompat
+import android.content.Intent
+import android.content.Context
+import android.app.PendingIntent
+import android.app.NotificationManager
+import android.app.NotificationChannel
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -36,6 +42,12 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        private const val NAVBAND_STATUS_CHANNEL = "navband_status"
+        private const val NAVBAND_STATUS_NOTIFICATION = 1001
+    }
+
 
     private var bluetoothResults by mutableStateOf(
         emptyList<String>()
@@ -77,6 +89,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+
+        if (android.os.Build.VERSION.SDK_INT >=
+            android.os.Build.VERSION_CODES.TIRAMISU) {
+            requestPermissions(
+                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                2001
+            )
+        }
+
+        showNavBandNotification()
 
         requestNotificationPermission()
         requestBluetoothPermissions()
@@ -620,4 +643,54 @@ private fun VibrationButtonRow(
             Text(rightText)
         }
     }
+
+
+    private fun showNavBandNotification() {
+        val manager = getSystemService(
+            Context.NOTIFICATION_SERVICE
+        ) as NotificationManager
+
+        val channel = NotificationChannel(
+            NAVBAND_STATUS_CHANNEL,
+            "NavBand",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Stato del servizio NavBand"
+            setSound(null, null)
+            enableVibration(false)
+        }
+
+        manager.createNotificationChannel(channel)
+
+        val intent = Intent(this, MainActivity::class.java)
+
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or
+                PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(
+            this,
+            NAVBAND_STATUS_CHANNEL
+        )
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("NavBand attivo")
+            .setContentText(
+                "In attesa delle indicazioni di navigazione"
+            )
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        manager.notify(
+            NAVBAND_STATUS_NOTIFICATION,
+            notification
+        )
+    }
+
 }
