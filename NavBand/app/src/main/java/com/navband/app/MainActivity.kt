@@ -1,10 +1,4 @@
 package com.navband.app
-import androidx.core.app.NotificationCompat
-import android.content.Intent
-import android.content.Context
-import android.app.PendingIntent
-import android.app.NotificationManager
-import android.app.NotificationChannel
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -16,6 +10,12 @@ import android.graphics.Paint
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import androidx.core.app.NotificationCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
@@ -42,12 +42,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 
 class MainActivity : ComponentActivity() {
-
-    companion object {
-        private const val NAVBAND_STATUS_CHANNEL = "navband_status"
-        private const val NAVBAND_STATUS_NOTIFICATION = 1001
-    }
-
 
     private var bluetoothResults by mutableStateOf(
         emptyList<String>()
@@ -90,19 +84,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-
-        if (android.os.Build.VERSION.SDK_INT >=
-            android.os.Build.VERSION_CODES.TIRAMISU) {
-            requestPermissions(
-                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
-                2001
-            )
-        }
-
-        showNavBandNotification()
-
         requestNotificationPermission()
         requestBluetoothPermissions()
+        showNavBandNotification()
 
         onBackPressedDispatcher.addCallback(
             this,
@@ -609,43 +593,17 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    companion object {
-
-        private const val REQUEST_NOTIFICATION_PERMISSION = 1001
-        private const val REQUEST_BLUETOOTH_PERMISSION = 1002
-    }
-}
-
-@androidx.compose.runtime.Composable
-private fun VibrationButtonRow(
-    leftText: String,
-    rightText: String,
-    onLeft: () -> Unit,
-    onRight: () -> Unit
-) {
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-
-        Button(
-            onClick = onLeft,
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(leftText)
-        }
-
-        Button(
-            onClick = onRight,
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(rightText)
-        }
-    }
-
-
     private fun showNavBandNotification() {
+
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
         val manager = getSystemService(
             Context.NOTIFICATION_SERVICE
         ) as NotificationManager
@@ -693,4 +651,40 @@ private fun VibrationButtonRow(
         )
     }
 
+    companion object {
+
+        private const val REQUEST_NOTIFICATION_PERMISSION = 1001
+        private const val REQUEST_BLUETOOTH_PERMISSION = 1002
+        private const val NAVBAND_STATUS_CHANNEL = "navband_status"
+        private const val NAVBAND_STATUS_NOTIFICATION = 1003
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun VibrationButtonRow(
+    leftText: String,
+    rightText: String,
+    onLeft: () -> Unit,
+    onRight: () -> Unit
+) {
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+
+        Button(
+            onClick = onLeft,
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(leftText)
+        }
+
+        Button(
+            onClick = onRight,
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(rightText)
+        }
+    }
 }
