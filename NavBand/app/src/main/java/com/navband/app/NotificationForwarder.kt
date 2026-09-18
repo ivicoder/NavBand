@@ -84,9 +84,8 @@ class NotificationForwarder(
          * Prima riga: distanza.
          */
         val distanceText =
-            event.distance.ifBlank {
-                arrow
-            }
+            if (event.distance.isBlank()) arrow
+            else "$arrow ${event.distance}"
 
         /*
          * Seconda riga: istruzione / strada.
