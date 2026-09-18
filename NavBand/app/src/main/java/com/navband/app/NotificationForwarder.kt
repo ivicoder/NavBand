@@ -57,14 +57,14 @@ class NotificationForwarder(
         val arrow =
             when (event.direction) {
 
-                NavigationDirection.LEFT -> "←"
-                NavigationDirection.RIGHT -> "→"
-                NavigationDirection.SLIGHT_LEFT -> "↖"
-                NavigationDirection.SLIGHT_RIGHT -> "↗"
-                NavigationDirection.STRAIGHT -> "↑"
-                NavigationDirection.U_TURN -> "↶"
-                NavigationDirection.ROUNDABOUT -> "⟳"
-                NavigationDirection.UNKNOWN -> "•"
+                NavigationDirection.LEFT -> "<<"
+                NavigationDirection.RIGHT -> ">>"
+                NavigationDirection.SLIGHT_LEFT -> "<"
+                NavigationDirection.SLIGHT_RIGHT -> ">"
+                NavigationDirection.STRAIGHT -> "^"
+                NavigationDirection.U_TURN -> "U"
+                NavigationDirection.ROUNDABOUT -> "O"
+                NavigationDirection.UNKNOWN -> "-"
             }
 
         val title =
