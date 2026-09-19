@@ -3,6 +3,7 @@ package com.navband.app
 import android.app.Notification
 import android.content.Context
 import android.service.notification.NotificationListenerService
+import android.util.Log
 import android.service.notification.StatusBarNotification
 
 class NavigationNotificationListener : NotificationListenerService() {
@@ -222,7 +223,7 @@ class NavigationNotificationListener : NotificationListenerService() {
          * PARSER
          */
 
-        val event =
+        val parsedEvent =
             NavigationParser.parse(
                 title = title,
                 text = text,
@@ -231,10 +232,71 @@ class NavigationNotificationListener : NotificationListenerService() {
             ) ?: return
 
         /*
+         * BITMAP CLASSIFIER
+         *
+         * Il parser testuale mantiene la priorita\u2019.
+         * Usiamo la bitmap di Google Maps soltanto quando
+         * il parser non ha riconosciuto una direzione.
+         */
+        val event =
+            if (
+                parsedEvent.direction == NavigationDirection.UNKNOWN &&
+                parsedEvent.image != null
+            ) {
+
+                try {
+                    val prediction =
+                        ManeuverBitmapClassifier.classify(
+                            context = this,
+                            bitmap = parsedEvent.image
+                        )
+
+                    if (prediction != null) {
+                        Log.d(
+                            "NavBandBitmap",
+                            "Classifier: label=${prediction.label}, " +
+                                "direction=${prediction.direction}, " +
+                                "confidence=${prediction.confidence}"
+                        )
+
+                        parsedEvent.copy(
+                            direction = prediction.direction
+                        )
+                    } else {
+                        val fallbackDirection =
+                            ImageDirectionDetector.detect(parsedEvent.image)
+
+                        Log.d(
+                            "NavBandBitmap",
+                            "Classifier: no confident result; fallback=$fallbackDirection"
+                        )
+
+                        if (fallbackDirection != null) {
+                            parsedEvent.copy(
+                                direction = fallbackDirection
+                            )
+                        } else {
+                            parsedEvent
+                        }
+                    }
+                } catch (error: Exception) {
+                    Log.e(
+                        "NavBandBitmap",
+                        "Classifier error; keeping parser result",
+                        error
+                    )
+                    parsedEvent
+                }
+
+            } else {
+                parsedEvent
+            }
+
+        /*
          * VIBRATION
          *
          * La vibrazione viene generata direttamente
-         * dall'evento interpretato dal parser.
+         * dall'evento finale, dopo l'eventuale classificazione bitmap.
          */
 
         VibrationEngine.vibrate(
