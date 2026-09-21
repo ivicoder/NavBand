@@ -170,43 +170,135 @@ class NavigationNotificationListener : NotificationListenerService() {
 
         result.append("EXTRAS\n")
 
-        for (key in extras.keySet()) {
+        fun appendDebugValue(
+            label: String,
+            value: Any?,
+            indent: String = "",
+            depth: Int = 0
+        ) {
+            result.append(indent)
+            result.append(label)
+            result.append("\n")
 
-            try {
+            if (value == null) {
+                result.append(indent)
+                result.append("null\n\n")
+                return
+            }
 
-                val value =
-                    extras.get(key)
+            result.append(indent)
+            result.append(value.javaClass.name)
+            result.append("\n")
 
-                result.append("\n")
-                result.append(key)
-                result.append("\n")
+            if (depth >= 6) {
+                result.append(indent)
+                result.append("<max depth>\n\n")
+                return
+            }
 
-                if (value == null) {
-
-                    result.append("null")
-
-                } else {
-
-                    result.append(
-                        value.javaClass.name
-                    )
-
-                    result.append("\n")
-
-                    result.append(
-                        value.toString()
-                    )
+            when (value) {
+                is android.os.Bundle -> {
+                    for (nestedKey in value.keySet().sorted()) {
+                        try {
+                            appendDebugValue(
+                                label = nestedKey,
+                                value = value.get(nestedKey),
+                                indent = "$indent  ",
+                                depth = depth + 1
+                            )
+                        } catch (e: Exception) {
+                            result.append(indent)
+                            result.append("  ")
+                            result.append(nestedKey)
+                            result.append("\n    <errore: ")
+                            result.append(e.javaClass.name)
+                            result.append(">\n")
+                        }
+                    }
                 }
 
-                result.append("\n")
+                is Array<*> -> {
+                    for ((index, item) in value.withIndex()) {
+                        appendDebugValue(
+                            label = "[$index]",
+                            value = item,
+                            indent = "$indent  ",
+                            depth = depth + 1
+                        )
+                    }
+                }
 
-            } catch (_: Exception) {
+                is java.util.ArrayList<*> -> {
+                    for ((index, item) in value.withIndex()) {
+                        appendDebugValue(
+                            label = "[$index]",
+                            value = item,
+                            indent = "$indent  ",
+                            depth = depth + 1
+                        )
+                    }
+                }
 
-                result.append("\n")
+                else -> {
+                    result.append(indent)
+                    result.append(value.toString())
+                    result.append("\n")
+                }
+            }
+
+            result.append("\n")
+        }
+
+        for (key in extras.keySet().sorted()) {
+            try {
+                appendDebugValue(
+                    label = key,
+                    value = extras.get(key)
+                )
+            } catch (e: Exception) {
                 result.append(key)
-                result.append("\n<errore lettura>\n")
+                result.append("\n<errore: ")
+                result.append(e.javaClass.name)
+                result.append(">\n\n")
             }
         }
+
+        result.append("SPECIAL CHECKS\n")
+
+        appendDebugValue(
+            label = "android.textLines",
+            value = extras.get(Notification.EXTRA_TEXT_LINES)
+        )
+
+        appendDebugValue(
+            label = "android.title.big",
+            value = extras.get(Notification.EXTRA_TITLE_BIG)
+        )
+
+        appendDebugValue(
+            label = "android.summaryText",
+            value = extras.get(Notification.EXTRA_SUMMARY_TEXT)
+        )
+
+        appendDebugValue(
+            label = "android.template",
+            value = extras.get(Notification.EXTRA_TEMPLATE)
+        )
+
+        appendDebugValue(
+            label = "contentView",
+            value = notification.contentView
+        )
+
+        appendDebugValue(
+            label = "bigContentView",
+            value = notification.bigContentView
+        )
+
+        appendDebugValue(
+            label = "headsUpContentView",
+            value = notification.headsUpContentView
+        )
 
         getSharedPreferences(
             PREFS,
