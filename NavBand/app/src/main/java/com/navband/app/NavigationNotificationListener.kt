@@ -18,6 +18,12 @@ class NavigationNotificationListener : NotificationListenerService() {
         private const val MAPS_PACKAGE =
             "com.google.android.apps.maps"
 
+        // TEMPORARY DIAGNOSTIC: Android Auto navigation notification.
+        private const val ANDROID_AUTO_PACKAGE =
+            "com.google.android.projection.gearhead"
+
+        private const val ANDROID_AUTO_NAV_NOTIFICATION_ID = 2
+
         private const val NAVBAND_PACKAGE =
             "com.navband.app"
 
@@ -83,6 +89,95 @@ class NavigationNotificationListener : NotificationListenerService() {
                     Notification.EXTRA_SUB_TEXT
                 )
                 ?.toString()
+
+        /*
+         * TEMPORARY ANDROID AUTO DIAGNOSTIC
+         *
+         * Inspect ONLY Android Auto navigation notification ID 2.
+         * Nothing is parsed, vibrated or forwarded from this branch.
+         */
+        if (
+            packageName == ANDROID_AUTO_PACKAGE &&
+            sbn.id == ANDROID_AUTO_NAV_NOTIFICATION_ID
+        ) {
+            val result = StringBuilder()
+
+            result.append("ANDROID AUTO NAVIGATION NOTIFICATION\n")
+            result.append("PACKAGE\n$packageName\n\n")
+            result.append("ID\n${sbn.id}\n\n")
+            result.append("KEY\n${sbn.key}\n\n")
+            result.append("ONGOING\n${sbn.isOngoing}\n\n")
+            result.append("POST_TIME\n${sbn.postTime}\n\n")
+            result.append("TITLE\n${title ?: "null"}\n\n")
+            result.append("TEXT\n${text ?: "null"}\n\n")
+            result.append("SUBTEXT\n${subText ?: "null"}\n\n")
+            result.append("EXTRAS\n")
+
+            fun dump(label: String, value: Any?, indent: String = "", depth: Int = 0) {
+                result.append(indent).append(label).append("\n")
+                if (value == null) {
+                    result.append(indent).append("null\n\n")
+                    return
+                }
+                result.append(indent).append("TYPE: ").append(value.javaClass.name).append("\n")
+                if (depth >= 8) {
+                    result.append(indent).append("<max depth>\n\n")
+                    return
+                }
+                when (value) {
+                    is android.os.Bundle -> {
+                        for (k in value.keySet().sorted()) {
+                            try { dump(k, value.get(k), "$indent  ", depth + 1) }
+                            catch (e: Exception) {
+                                result.append(indent).append("  ").append(k)
+                                    .append("\n    <errore: ").append(e.javaClass.name).append(">\n")
+                            }
+                        }
+                    }
+                    is ByteArray -> {
+                        result.append(indent).append("VALUE_HEX: ")
+                            .append(value.joinToString(" ") { "%02X".format(it.toInt() and 0xFF) })
+                            .append("\n")
+                        result.append(indent).append("VALUE_SIZE: ").append(value.size).append("\n\n")
+                    }
+                    is ShortArray -> result.append(indent).append("VALUE: ").append(value.joinToString(",")).append("\n\n")
+                    is IntArray -> result.append(indent).append("VALUE: ").append(value.joinToString(",")).append("\n\n")
+                    is LongArray -> result.append(indent).append("VALUE: ").append(value.joinToString(",")).append("\n\n")
+                    is FloatArray -> result.append(indent).append("VALUE: ").append(value.joinToString(",")).append("\n\n")
+                    is DoubleArray -> result.append(indent).append("VALUE: ").append(value.joinToString(",")).append("\n\n")
+                    is BooleanArray -> result.append(indent).append("VALUE: ").append(value.joinToString(",")).append("\n\n")
+                    is Array<*> -> value.forEachIndexed { i, v -> dump("[$i]", v, "$indent  ", depth + 1) }
+                    is java.util.ArrayList<*> -> value.forEachIndexed { i, v -> dump("[$i]", v, "$indent  ", depth + 1) }
+                    else -> result.append(indent).append("VALUE: ").append(value.toString()).append("\n\n")
+                }
+            }
+
+            for (key in extras.keySet().sorted()) {
+                try { dump(key, extras.get(key)) }
+                catch (e: Exception) {
+                    result.append(key).append("\n<errore: ").append(e.javaClass.name).append(">\n\n")
+                }
+            }
+
+            result.append("SPECIAL CHECKS\n")
+            dump("android.textLines", extras.get(Notification.EXTRA_TEXT_LINES))
+            dump("android.title.big", extras.get(Notification.EXTRA_TITLE_BIG))
+            dump("android.summaryText", extras.get(Notification.EXTRA_SUMMARY_TEXT))
+            dump("android.template", extras.get(Notification.EXTRA_TEMPLATE))
+            dump("contentView", notification.contentView)
+            dump("bigContentView", notification.bigContentView)
+            dump("headsUpContentView", notification.headsUpContentView)
+
+            getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_DEBUG, result.toString())
+                .apply()
+
+            Log.d("NavBandAndroidAuto", "Captured Android Auto notification ID 2")
+
+            // Do NOT parse, vibrate or forward Android Auto data.
+            return
+        }
 
         /*
          * Elaboriamo soltanto le notifiche
