@@ -17,7 +17,22 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
         val bearings: MutableList<Double>
     ) {
         val bearing: Double
-            get() = circularMean(bearings)
+            get() {
+                if (bearings.isEmpty()) return 0.0
+
+                var x = 0.0
+                var y = 0.0
+
+                bearings.forEach { value ->
+                    val radians = Math.toRadians(value)
+                    x += cos(radians)
+                    y += sin(radians)
+                }
+
+                var result = Math.toDegrees(atan2(y, x)) % 360.0
+                if (result < 0.0) result += 360.0
+                return result
+            }
     }
 
     override fun resolve(
