@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
 
         requestNotificationPermission()
         requestBluetoothPermissions()
+        requestLocationPermissions()
         showNavBandNotification()
 
         onBackPressedDispatcher.addCallback(
@@ -437,6 +438,24 @@ class MainActivity : ComponentActivity() {
                     REQUEST_NOTIFICATION_PERMISSION
                 )
             }
+        }
+    }
+
+    private fun requestLocationPermissions() {
+        val permissions = arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+
+        val missing = permissions.filter {
+            checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (missing.isNotEmpty()) {
+            requestPermissions(
+                missing.toTypedArray(),
+                1003
+            )
         }
     }
 
