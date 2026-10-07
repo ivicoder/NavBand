@@ -44,7 +44,7 @@ class OnlineValhallaProvider(
             val roundaboutPoints = located
                 .flatMap { it.edges }
                 .filter { it.roundabout }
-                .mapNotNull { it.point }
+                .mapNotNull { it.correlatedPoint }
                 .distinctBy { "${it.lat}:${it.lon}" }
 
             if (roundaboutPoints.isEmpty()) return null
