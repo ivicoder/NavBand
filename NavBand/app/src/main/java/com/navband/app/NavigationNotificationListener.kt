@@ -4,10 +4,6 @@ import com.navband.app.roundabout.RoundaboutRuntime
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-import com.navband.app.roundabout.RoundaboutRuntime
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-
 import android.app.Notification
 import android.content.Context
 import android.service.notification.NotificationListenerService
@@ -50,8 +46,6 @@ class NavigationNotificationListener : NotificationListenerService() {
 
     private lateinit var forwarder: NotificationForwarder
     private lateinit var roundaboutRuntime: RoundaboutRuntime
-    private val roundaboutExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-    private lateinit var roundaboutRuntime: RoundaboutRuntime
     private val roundaboutExecutor: ExecutorService =
         Executors.newSingleThreadExecutor()
 
@@ -60,14 +54,8 @@ class NavigationNotificationListener : NotificationListenerService() {
 
         forwarder =
             NotificationForwarder(this)
-        roundaboutRuntime = RoundaboutRuntime(this)
         roundaboutRuntime =
             RoundaboutRuntime(this)
-    }
-
-    override fun onDestroy() {
-        roundaboutExecutor.shutdownNow()
-        super.onDestroy()
     }
 
     override fun onDestroy() {
