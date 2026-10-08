@@ -55,7 +55,18 @@ class NavigationNotificationListener : NotificationListenerService() {
         forwarder =
             NotificationForwarder(this)
         roundaboutRuntime =
-            RoundaboutRuntime(this)
+            RoundaboutRuntime(this) { message ->
+                getSharedPreferences(
+                    PREFS,
+                    Context.MODE_PRIVATE
+                )
+                    .edit()
+                    .putString(
+                        KEY_DEBUG,
+                        message
+                    )
+                    .apply()
+            }
     }
 
     override fun onDestroy() {

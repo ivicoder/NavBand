@@ -13,7 +13,8 @@ import java.util.Locale
 class RoundaboutRuntime(
     context: Context,
     private val dataProvider: RoundaboutDataProvider = OnlineValhallaProvider(),
-    private val resolver: RoundaboutResolver = DefaultRoundaboutResolver()
+    private val resolver: RoundaboutResolver = DefaultRoundaboutResolver(),
+    private val debug: (String) -> Unit = {}
 ) {
     private val appContext = context.applicationContext
     private val locationManager =
@@ -22,12 +23,43 @@ class RoundaboutRuntime(
         ) as LocationManager
 
     fun resolve(event: NavigationEvent): NavigationEvent {
+        debug("=== ROUNDABOUT RUNTIME ===")
+        debug("direction=${event.direction}")
+        debug("instruction=${event.instruction}")
+        debug("subText=${event.subText}")
+        debug("distance=${event.distance}")
+        debug("initial roundaboutExit=${event.roundaboutExit}")
+
         if (event.direction != NavigationDirection.ROUNDABOUT) {
+            debug("SKIP: direction is not ROUNDABOUT")
             return event
         }
 
-        val location = lastKnownLocation() ?: return event
-        val targetRoad = extractTargetRoad(event) ?: return event
+        val location = lastKnownLocation()
+
+        if (location == null) {
+            debug("GPS: NO LAST KNOWN LOCATION")
+            return event
+        }
+
+        debug(
+            "GPS: lat=${location.latitude}, lon=${location.longitude}, " +
+                "accuracy=${if (location.hasAccuracy()) location.accuracy else "unknown"}, " +
+                "bearing=${if (location.hasBearing()) location.bearing else "unknown"}"
+        )
+
+        val targetRoad = extractTargetRoad(event)
+
+        if (targetRoad == null) {
+            debug("TARGET ROAD: NOT FOUND")
+            return event
+        }
+
+        debug("TARGET ROAD: $targetRoad")
+
+        val distanceMeters = parseDistanceMeters(event.distance)
+
+        debug("DISTANCE METERS: ${distanceMeters ?: "unknown"}")
 
         val context = try {
             dataProvider.loadContext(
@@ -42,23 +74,60 @@ class RoundaboutRuntime(
                     } else {
                         null
                     },
-                distanceMeters = parseDistanceMeters(
-                    event.distance
-                )
+                distanceMeters = distanceMeters
             )
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            debug(
+                "VALHALLA/CONTEXT ERROR: " +
+                    "${error.javaClass.simpleName}: ${error.message}"
+            )
             null
         }
 
-        context ?: return event
+        if (context == null) {
+            debug("CONTEXT: NULL")
+            return event
+        }
+
+        debug(
+            "CONTEXT: OK " +
+                "currentRoad=${context.current.roadName} " +
+                "currentEdges=${context.current.edges.size} " +
+                "targetRoad=${context.target.roadName} " +
+                "targetEdges=${context.target.edges.size} " +
+                "radialEdges=${context.radialEdges.size}"
+        )
 
         return try {
             val decision = resolver.resolve(context)
-            RoundaboutAdapter.applyDecision(
-                event,
-                decision
+
+            debug("=== ROUNDABOUT DECISION ===")
+            debug("resolved=${decision.resolved}")
+            debug("exit=${decision.exit}")
+            debug("score=${decision.score}")
+            debug("confidence=${decision.confidence}")
+            debug("targetRoad=${decision.targetRoad}")
+            debug("matchedRoad=${decision.matchedRoad}")
+            debug("source=${decision.source}")
+            debug("reasons=${decision.reasons.joinToString(" | ")}")
+
+            val resolvedEvent =
+                RoundaboutAdapter.applyDecision(
+                    event,
+                    decision
+                )
+
+            debug(
+                "RESOLVED EVENT: " +
+                    "roundaboutExit=${resolvedEvent.roundaboutExit}"
             )
-        } catch (_: Exception) {
+
+            resolvedEvent
+        } catch (error: Exception) {
+            debug(
+                "RESOLVER ERROR: " +
+                    "${error.javaClass.simpleName}: ${error.message}"
+            )
             event
         }
     }
@@ -77,6 +146,7 @@ class RoundaboutRuntime(
             ) == PackageManager.PERMISSION_GRANTED
 
         if (!fine && !coarse) {
+            debug("GPS PERMISSION: NOT GRANTED")
             return null
         }
 
@@ -89,11 +159,28 @@ class RoundaboutRuntime(
             .mapNotNull { provider ->
                 try {
                     if (!locationManager.isProviderEnabled(provider)) {
+                        debug("GPS PROVIDER DISABLED: $provider")
                         null
                     } else {
-                        locationManager.getLastKnownLocation(provider)
+                        val location =
+                            locationManager.getLastKnownLocation(provider)
+
+                        if (location != null) {
+                            debug(
+                                "GPS PROVIDER $provider: " +
+                                    "${location.latitude},${location.longitude}"
+                            )
+                        } else {
+                            debug("GPS PROVIDER $provider: no location")
+                        }
+
+                        location
                     }
-                } catch (_: SecurityException) {
+                } catch (error: SecurityException) {
+                    debug(
+                        "GPS PROVIDER $provider ERROR: " +
+                            error.message
+                    )
                     null
                 }
             }
