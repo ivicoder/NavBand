@@ -360,6 +360,12 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
                 candidate == normalizedTarget ->
                     best = max(best, 100)
 
+                // Same words in a different order are equivalent road names.
+                // Example: "Via Gennaro Papa" and "Via Papa Gennaro".
+                candidate.split(" ").filter { it.isNotBlank() }.toSet() ==
+                    normalizedTarget.split(" ").filter { it.isNotBlank() }.toSet() ->
+                    best = max(best, 100)
+
                 candidate.contains(normalizedTarget) ||
                     normalizedTarget.contains(candidate) ->
                     best = max(best, 82)
