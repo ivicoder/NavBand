@@ -41,34 +41,52 @@ class OnlineValhallaProvider(
         }
 
         return try {
+            // Prima prova il percorso Valhalla: il simulatore non dipende dal fatto
+            // che il primo /locate riconosca già un edge roundabout.
+            val routeGeometry = try {
+                routeRoundaboutGeometry(current, headingDegrees, distanceMeters)
+            } catch (routeError: Exception) {
+                debug("VALHALLA ROUTE: unavailable: ${routeError.javaClass.simpleName}: ${routeError.message}")
+                null
+            }
+
             val search = buildSearchPoints(
                 current,
                 headingDegrees,
                 distanceMeters ?: 150.0
             )
-
             debug("VALHALLA: initial locate points=${search.size}")
             val located = locate(search)
             debug("VALHALLA: initial locate results=${located.size}, edges=${located.sumOf { it.edges.size }}")
-            if (located.isEmpty()) {
-                debug("VALHALLA NULL: initial /locate returned no results")
+            if (located.isEmpty() && routeGeometry == null) {
+                debug("VALHALLA NULL: both route geometry and initial /locate are unavailable")
                 return null
             }
 
-            val roundaboutPoints = located
+            val locateRoundaboutPoints = located
                 .flatMap { it.edges }
                 .filter { it.roundabout }
                 .mapNotNull { it.correlatedPoint }
                 .distinctBy { "${it.lat}:${it.lon}" }
 
-            debug("VALHALLA: roundabout correlated points=${roundaboutPoints.size}")
+            // Preferisce i punti della geometria della manovra (come nel Simulator).
+            // Solo se /route non ha isolato la rotatoria usa gli edge roundabout di /locate.
+            val routePoints = routeGeometry?.points.orEmpty()
+            val roundaboutPoints = if (routePoints.size >= 3) {
+                routePoints
+            } else {
+                locateRoundaboutPoints
+            }
+
+            debug("VALHALLA: route geometry points=${routePoints.size}")
+            debug("VALHALLA: locate roundabout correlated points=${locateRoundaboutPoints.size}")
             if (roundaboutPoints.isEmpty()) {
-                debug("VALHALLA NULL: no roundabout edges found near current route")
+                debug("VALHALLA NULL: neither /route maneuver geometry nor initial /locate identified the roundabout")
                 return null
             }
 
             val center = average(roundaboutPoints)
-            debug("VALHALLA: estimated center=${center.lat},${center.lon}")
+            debug("VALHALLA: estimated center=${center.lat},${center.lon}; source=${if (routePoints.size >= 3) "route" else "locate"}")
             val probes = buildProbes(center)
             val probeResults = locate(probes.map { it.point })
 
@@ -113,15 +131,15 @@ class OnlineValhallaProvider(
             RoundaboutContext(
                 current = NavigationLocationEvidence(
                     point = current,
-                    roadName = firstRoadName(located.first().edges),
-                    edges = located.first().edges
+                    roadName = located.firstOrNull()?.let { firstRoadName(it.edges) },
+                    edges = located.firstOrNull()?.edges.orEmpty()
                 ),
                 target = NavigationLocationEvidence(
                     point = target?.correlatedPoint ?: center,
                     roadName = targetRoad,
                     edges = target?.let { listOf(it) } ?: emptyList()
                 ),
-                routePoints = emptyList(),
+                routePoints = routePoints,
                 center = center,
                 radialEdges = uniqueEdges
             )
@@ -136,6 +154,152 @@ class OnlineValhallaProvider(
         val radiusMeters: Double,
         val bearingDegrees: Double
     )
+
+    private data class RouteGeometry(
+        val points: List<GeoPoint>,
+        val maneuverIndex: Int,
+        val maneuverType: Int?,
+        val exitCount: Int?
+    )
+
+    /**
+     * Valhalla /route + shape polyline6, porting the Simulator strategy.
+     * Since the notification exposes a target road name but no target coordinates,
+     * the destination is projected beyond the reported maneuver distance along the
+     * current travel bearing. This is a best-effort geometry source; /locate remains
+     * the fallback when the route does not contain a roundabout maneuver.
+     */
+    private fun routeRoundaboutGeometry(
+        current: GeoPoint,
+        heading: Double?,
+        distance: Double?
+    ): RouteGeometry? {
+        if (heading == null || !heading.isFinite()) {
+            debug("VALHALLA ROUTE: skipped because GPS bearing is unavailable")
+            return null
+        }
+
+        val destination = destinationPoint(
+            current,
+            heading,
+            (distance ?: 150.0).coerceIn(40.0, 600.0) + 180.0
+        )
+        val locations = JSONArray()
+            .put(JSONObject().put("lat", current.lat).put("lon", current.lon))
+            .put(JSONObject().put("lat", destination.lat).put("lon", destination.lon))
+        val payload = JSONObject()
+            .put("locations", locations)
+            .put("costing", "auto")
+            .put("directions_options", JSONObject().put("units", "kilometers"))
+            .toString()
+
+        val response = JSONObject(post("$baseUrl/route", payload))
+        val trip = response.optJSONObject("trip") ?: return null
+        val legs = trip.optJSONArray("legs") ?: return null
+        val leg = legs.optJSONObject(0) ?: return null
+        val maneuvers = leg.optJSONArray("maneuvers") ?: return null
+        var maneuverIndex = -1
+        var maneuver: JSONObject? = null
+
+        for (i in 0 until maneuvers.length()) {
+            val candidate = maneuvers.optJSONObject(i) ?: continue
+            val hasExitCount = candidate.has("roundabout_exit_count") &&
+                !candidate.isNull("roundabout_exit_count")
+            val type = candidate.optInt("type", -1)
+            if (hasExitCount || type == 26 || type == 27) {
+                maneuverIndex = i
+                maneuver = candidate
+                if (hasExitCount) break
+            }
+        }
+        if (maneuverIndex < 0 || maneuver == null) {
+            debug("VALHALLA ROUTE: no roundabout maneuver found; falling back to /locate")
+            return null
+        }
+
+        val shape = leg.optString("shape", "")
+        if (shape.isBlank()) {
+            debug("VALHALLA ROUTE: maneuver found but shape is missing")
+            return null
+        }
+        val allPoints = decodePolyline6(shape)
+        if (allPoints.size < 3) return null
+
+        var maneuverStartMeters = 0.0
+        for (i in 0 until maneuverIndex) {
+            maneuverStartMeters += (maneuvers.optJSONObject(i)?.optDouble("length", 0.0) ?: 0.0) * 1000.0
+        }
+        val maneuverLengthMeters = maneuver.optDouble("length", 0.0) * 1000.0
+        val windowStart = (maneuverStartMeters - 35.0).coerceAtLeast(0.0)
+        val windowEnd = maneuverStartMeters + maneuverLengthMeters + 35.0
+
+        val selected = mutableListOf<GeoPoint>()
+        var cumulative = 0.0
+        for (i in allPoints.indices) {
+            if (i > 0) cumulative += pointDistanceMeters(allPoints[i - 1], allPoints[i])
+            if (cumulative in windowStart..windowEnd) selected += allPoints[i]
+        }
+
+        if (selected.size < 3) {
+            val fraction = (maneuverStartMeters + maneuverLengthMeters / 2.0) /
+                (leg.optJSONObject("summary")?.optDouble("length", 1.0)?.times(1000.0) ?: 1.0).coerceAtLeast(1.0)
+            val centerIndex = (allPoints.size * fraction).toInt().coerceIn(0, allPoints.lastIndex)
+            selected.clear()
+            for (i in (centerIndex - 4).coerceAtLeast(0)..(centerIndex + 4).coerceAtMost(allPoints.lastIndex)) {
+                selected += allPoints[i]
+            }
+        }
+
+        debug("VALHALLA ROUTE: maneuver index=$maneuverIndex type=${maneuver.optInt("type", -1)} exitCount=${if (maneuver.has("roundabout_exit_count")) maneuver.optInt("roundabout_exit_count") else null} selectedPoints=${selected.size} length=${maneuverLengthMeters}m")
+        return RouteGeometry(
+            points = selected.distinctBy { "${it.lat}:${it.lon}" },
+            maneuverIndex = maneuverIndex,
+            maneuverType = maneuver.optInt("type", -1).takeIf { it >= 0 },
+            exitCount = if (maneuver.has("roundabout_exit_count")) maneuver.optInt("roundabout_exit_count") else null
+        )
+    }
+
+    private fun decodePolyline6(encoded: String): List<GeoPoint> {
+        val points = mutableListOf<GeoPoint>()
+        var index = 0
+        var lat = 0
+        var lon = 0
+        while (index < encoded.length) {
+            var result = 0
+            var shift = 0
+            var byte: Int
+            do {
+                if (index >= encoded.length) return points
+                byte = encoded[index++].code - 63
+                result = result or ((byte and 0x1f) shl shift)
+                shift += 5
+            } while (byte >= 0x20)
+            lat += if ((result and 1) != 0) (result shr 1).inv() else (result shr 1)
+
+            result = 0
+            shift = 0
+            do {
+                if (index >= encoded.length) return points
+                byte = encoded[index++].code - 63
+                result = result or ((byte and 0x1f) shl shift)
+                shift += 5
+            } while (byte >= 0x20)
+            lon += if ((result and 1) != 0) (result shr 1).inv() else (result shr 1)
+            points += GeoPoint(lat / 1_000_000.0, lon / 1_000_000.0)
+        }
+        return points
+    }
+
+    private fun pointDistanceMeters(a: GeoPoint, b: GeoPoint): Double {
+        val lat1 = Math.toRadians(a.lat)
+        val lat2 = Math.toRadians(b.lat)
+        val dLat = lat2 - lat1
+        val dLon = Math.toRadians(b.lon - a.lon)
+        val h = kotlin.math.sin(dLat / 2).let { it * it } +
+            kotlin.math.cos(lat1) * kotlin.math.cos(lat2) *
+            kotlin.math.sin(dLon / 2).let { it * it }
+        return 2.0 * EARTH_RADIUS_M * kotlin.math.asin(kotlin.math.sqrt(h.coerceIn(0.0, 1.0)))
+    }
 
     private fun buildSearchPoints(
         current: GeoPoint,
