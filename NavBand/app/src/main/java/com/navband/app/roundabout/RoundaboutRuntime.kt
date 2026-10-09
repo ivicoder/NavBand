@@ -12,10 +12,13 @@ import java.util.Locale
 
 class RoundaboutRuntime(
     context: Context,
-    private val dataProvider: RoundaboutDataProvider = OnlineValhallaProvider(),
+    dataProvider: RoundaboutDataProvider? = null,
     private val resolver: RoundaboutResolver = DefaultRoundaboutResolver(),
     private val debug: (String) -> Unit = {}
 ) {
+    private val activeDataProvider: RoundaboutDataProvider =
+        dataProvider ?: OnlineValhallaProvider(debug = debug)
+
     private val appContext = context.applicationContext
     private val locationManager =
         appContext.getSystemService(
@@ -62,7 +65,7 @@ class RoundaboutRuntime(
         debug("DISTANCE METERS: ${distanceMeters ?: "unknown"}")
 
         val context = try {
-            dataProvider.loadContext(
+            activeDataProvider.loadContext(
                 current = GeoPoint(
                     lat = location.latitude,
                     lon = location.longitude

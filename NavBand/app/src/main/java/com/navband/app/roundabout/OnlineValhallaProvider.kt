@@ -13,7 +13,8 @@ import kotlin.math.max
 import kotlin.math.sin
 
 class OnlineValhallaProvider(
-    private val baseUrl: String = "https://valhalla.openstreetmap.de"
+    private val baseUrl: String = "https://valhalla.openstreetmap.de",
+    private val debug: (String) -> Unit = {}
 ) : RoundaboutDataProvider {
 
     private companion object {
@@ -29,7 +30,15 @@ class OnlineValhallaProvider(
         headingDegrees: Double?,
         distanceMeters: Double?
     ): RoundaboutContext? {
-        if (!validPoint(current) || targetRoad.isBlank()) return null
+        debug("VALHALLA: loadContext target=$targetRoad heading=$headingDegrees distance=$distanceMeters")
+        if (!validPoint(current)) {
+            debug("VALHALLA NULL: current GPS point invalid")
+            return null
+        }
+        if (targetRoad.isBlank()) {
+            debug("VALHALLA NULL: target road is blank")
+            return null
+        }
 
         return try {
             val search = buildSearchPoints(
@@ -38,8 +47,13 @@ class OnlineValhallaProvider(
                 distanceMeters ?: 150.0
             )
 
+            debug("VALHALLA: initial locate points=${search.size}")
             val located = locate(search)
-            if (located.isEmpty()) return null
+            debug("VALHALLA: initial locate results=${located.size}, edges=${located.sumOf { it.edges.size }}")
+            if (located.isEmpty()) {
+                debug("VALHALLA NULL: initial /locate returned no results")
+                return null
+            }
 
             val roundaboutPoints = located
                 .flatMap { it.edges }
@@ -47,9 +61,14 @@ class OnlineValhallaProvider(
                 .mapNotNull { it.correlatedPoint }
                 .distinctBy { "${it.lat}:${it.lon}" }
 
-            if (roundaboutPoints.isEmpty()) return null
+            debug("VALHALLA: roundabout correlated points=${roundaboutPoints.size}")
+            if (roundaboutPoints.isEmpty()) {
+                debug("VALHALLA NULL: no roundabout edges found near current route")
+                return null
+            }
 
             val center = average(roundaboutPoints)
+            debug("VALHALLA: estimated center=${center.lat},${center.lon}")
             val probes = buildProbes(center)
             val probeResults = locate(probes.map { it.point })
 
@@ -79,12 +98,18 @@ class OnlineValhallaProvider(
                     ).joinToString(":")
                 }
 
-            if (uniqueEdges.isEmpty()) return null
+            debug("VALHALLA: radial edges=${radialEdges.size}, unique auto edges=${uniqueEdges.size}")
+            if (uniqueEdges.isEmpty()) {
+                debug("VALHALLA NULL: no usable auto-accessible radial edges")
+                return null
+            }
 
             val target = uniqueEdges.firstOrNull { edge ->
                 edge.names.any { roadMatches(it, targetRoad) }
             }
 
+            debug("VALHALLA: target road matched=${target != null}; names=${uniqueEdges.flatMap { it.names }.distinct().take(12)}")
+            debug("VALHALLA: context built successfully")
             RoundaboutContext(
                 current = NavigationLocationEvidence(
                     point = current,
@@ -100,7 +125,8 @@ class OnlineValhallaProvider(
                 center = center,
                 radialEdges = uniqueEdges
             )
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            debug("VALHALLA ERROR: ${error.javaClass.simpleName}: ${error.message ?: "no message"}")
             null
         }
     }
@@ -396,6 +422,7 @@ class OnlineValhallaProvider(
                 .use { it.write(body) }
 
             val status = connection.responseCode
+            debug("VALHALLA HTTP: endpoint=$endpoint status=$status")
             val stream =
                 if (status in 200..299) {
                     connection.inputStream
@@ -417,9 +444,10 @@ class OnlineValhallaProvider(
                 } ?: ""
 
             if (status !in 200..299) {
-                throw IOException("Valhalla HTTP $status")
+                throw IOException("Valhalla HTTP $status; responseChars=${text.length}")
             }
 
+            debug("VALHALLA HTTP: success responseChars=${text.length}")
             return text
         } finally {
             connection.disconnect()
