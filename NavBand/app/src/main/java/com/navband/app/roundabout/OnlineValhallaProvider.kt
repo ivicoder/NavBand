@@ -13,7 +13,7 @@ import kotlin.math.max
 import kotlin.math.sin
 
 class OnlineValhallaProvider(
-    private val baseUrl: String = "https://valhalla.openstreetmap.de",
+    private val baseUrl: String = "https://valhalla1.openstreetmap.de",
     private val debug: (String) -> Unit = {}
 ) : RoundaboutDataProvider {
 
