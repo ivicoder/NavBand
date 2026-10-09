@@ -116,7 +116,7 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
         val score = min(
             100,
             30 +
-                if (entryStrong) 30 else 10 +
+                (if (entryStrong) 30 else 10) +
                 when {
                     targetScore >= 100 -> 35
                     targetScore >= 82 -> 25
