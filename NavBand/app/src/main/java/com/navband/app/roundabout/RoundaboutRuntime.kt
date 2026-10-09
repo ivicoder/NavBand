@@ -145,6 +145,8 @@ class RoundaboutRuntime(
                 Manifest.permission.ACCESS_COARSE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
 
+        debug("GPS PERMISSION: fine=$fine coarse=$coarse")
+
         if (!fine && !coarse) {
             debug("GPS PERMISSION: NOT GRANTED")
             return null
@@ -224,28 +226,50 @@ class RoundaboutRuntime(
         var registered = false
 
         try {
-            val activeProvider = providers.firstOrNull { provider ->
+            val activeProviders = providers.filter { provider ->
                 try {
-                    locationManager.isProviderEnabled(provider)
-                } catch (_: Exception) {
+                    val enabled = locationManager.isProviderEnabled(provider)
+                    debug("GPS PROVIDER STATUS: $provider enabled=$enabled")
+                    enabled
+                } catch (error: Exception) {
+                    debug("GPS PROVIDER STATUS ERROR: $provider: ${error.message}")
                     false
                 }
             }
 
-            if (activeProvider == null) {
+            if (activeProviders.isEmpty()) {
                 debug("GPS FRESH: no enabled provider")
                 return null
             }
 
-            locationManager.requestLocationUpdates(
-                activeProvider,
-                0L,
-                0f,
-                listener,
-                android.os.Looper.getMainLooper()
+            for (provider in activeProviders) {
+                try {
+                    locationManager.requestLocationUpdates(
+                        provider,
+                        0L,
+                        0f,
+                        listener,
+                        android.os.Looper.getMainLooper()
+                    )
+                    registered = true
+                    debug("GPS FRESH: registered provider=$provider")
+                } catch (error: Exception) {
+                    debug(
+                        "GPS FRESH: registration failed provider=$provider: " +
+                            "${error.javaClass.simpleName}: ${error.message}"
+                    )
+                }
+            }
+
+            if (!registered) {
+                debug("GPS FRESH: registration failed for all enabled providers")
+                return null
+            }
+
+            debug(
+                "GPS FRESH: waiting up to 3000 ms via " +
+                    activeProviders.joinToString()
             )
-            registered = true
-            debug("GPS FRESH: waiting up to 3000 ms via $activeProvider")
 
             val received = finished.await(
                 3000,
