@@ -155,36 +155,134 @@ class RoundaboutRuntime(
             LocationManager.NETWORK_PROVIDER
         )
 
-        return providers
-            .mapNotNull { provider ->
-                try {
-                    if (!locationManager.isProviderEnabled(provider)) {
-                        debug("GPS PROVIDER DISABLED: $provider")
+        val now = android.os.SystemClock.elapsedRealtimeNanos()
+        val maxCacheAgeNanos = java.util.concurrent.TimeUnit.SECONDS.toNanos(15)
+
+        val cached = providers.mapNotNull { provider ->
+            try {
+                if (!locationManager.isProviderEnabled(provider)) {
+                    debug("GPS PROVIDER DISABLED: $provider")
+                    null
+                } else {
+                    val location = locationManager.getLastKnownLocation(provider)
+                    if (location == null) {
+                        debug("GPS CACHED $provider: no location")
                         null
                     } else {
-                        val location =
-                            locationManager.getLastKnownLocation(provider)
-
-                        if (location != null) {
-                            debug(
-                                "GPS PROVIDER $provider: " +
-                                    "${location.latitude},${location.longitude}"
-                            )
+                        val ageNanos = now - location.elapsedRealtimeNanos
+                        val ageSeconds = ageNanos / 1_000_000_000.0
+                        debug(
+                            "GPS CACHED $provider: age=${"%.1f".format(java.util.Locale.ROOT, ageSeconds)}s, " +
+                                "lat=${location.latitude}, lon=${location.longitude}, " +
+                                "accuracy=${if (location.hasAccuracy()) location.accuracy else "unknown"}"
+                        )
+                        if (ageNanos >= 0 && ageNanos <= maxCacheAgeNanos) {
+                            location
                         } else {
-                            debug("GPS PROVIDER $provider: no location")
+                            debug("GPS CACHED $provider: rejected because stale")
+                            null
                         }
-
-                        location
                     }
-                } catch (error: SecurityException) {
-                    debug(
-                        "GPS PROVIDER $provider ERROR: " +
-                            error.message
-                    )
-                    null
+                }
+            } catch (error: SecurityException) {
+                debug("GPS PROVIDER $provider ERROR: ${error.message}")
+                null
+            }
+        }.maxByOrNull { locationQuality(it) }
+
+        if (cached != null) {
+            debug("GPS: using cached location")
+            return cached
+        }
+
+        debug("GPS: cache empty; requesting fresh location")
+
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            debug("GPS FRESH: skipped because running on main thread")
+            return null
+        }
+
+        val result = java.util.concurrent.atomic.AtomicReference<Location?>(null)
+        val finished = java.util.concurrent.CountDownLatch(1)
+        val listener = object : android.location.LocationListener {
+            override fun onLocationChanged(location: Location) {
+                result.set(location)
+                finished.countDown()
+            }
+
+            @Deprecated("Deprecated by Android")
+            override fun onStatusChanged(
+                provider: String?,
+                status: Int,
+                extras: android.os.Bundle?
+            ) = Unit
+
+            override fun onProviderEnabled(provider: String) = Unit
+            override fun onProviderDisabled(provider: String) = Unit
+        }
+
+        var registered = false
+
+        try {
+            val activeProvider = providers.firstOrNull { provider ->
+                try {
+                    locationManager.isProviderEnabled(provider)
+                } catch (_: Exception) {
+                    false
                 }
             }
-            .maxByOrNull { locationQuality(it) }
+
+            if (activeProvider == null) {
+                debug("GPS FRESH: no enabled provider")
+                return null
+            }
+
+            locationManager.requestLocationUpdates(
+                activeProvider,
+                0L,
+                0f,
+                listener,
+                android.os.Looper.getMainLooper()
+            )
+            registered = true
+            debug("GPS FRESH: waiting up to 3000 ms via $activeProvider")
+
+            val received = finished.await(
+                3000,
+                java.util.concurrent.TimeUnit.MILLISECONDS
+            )
+
+            val fresh = result.get()
+            if (received && fresh != null) {
+                debug(
+                    "GPS FRESH: received lat=${fresh.latitude}, " +
+                        "lon=${fresh.longitude}, " +
+                        "accuracy=${if (fresh.hasAccuracy()) fresh.accuracy else "unknown"}"
+                )
+                return fresh
+            }
+
+            debug("GPS FRESH: timeout; no location received")
+            return null
+        } catch (error: SecurityException) {
+            debug("GPS FRESH: permission error: ${error.message}")
+            return null
+        } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
+            debug("GPS FRESH: interrupted")
+            return null
+        } catch (error: Exception) {
+            debug("GPS FRESH: ${error.javaClass.simpleName}: ${error.message}")
+            return null
+        } finally {
+            if (registered) {
+                try {
+                    locationManager.removeUpdates(listener)
+                } catch (error: Exception) {
+                    debug("GPS FRESH: removeUpdates error: ${error.message}")
+                }
+            }
+        }
     }
 
     private fun locationQuality(

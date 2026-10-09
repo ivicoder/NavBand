@@ -56,15 +56,20 @@ class NavigationNotificationListener : NotificationListenerService() {
             NotificationForwarder(this)
         roundaboutRuntime =
             RoundaboutRuntime(this) { message ->
-                getSharedPreferences(
+                val prefs = getSharedPreferences(
                     PREFS,
                     Context.MODE_PRIVATE
                 )
-                    .edit()
-                    .putString(
-                        KEY_DEBUG,
-                        message
-                    )
+                val timestamp = java.text.SimpleDateFormat(
+                    "HH:mm:ss",
+                    java.util.Locale.ITALY
+                ).format(java.util.Date())
+                val previous = prefs.getString(KEY_DEBUG, "").orEmpty()
+                val updated = (previous + "\n[" + timestamp + "] " + message)
+                    .takeLast(12_000)
+
+                prefs.edit()
+                    .putString(KEY_DEBUG, updated)
                     .apply()
             }
     }
