@@ -193,11 +193,23 @@ class OnlineValhallaProvider(
             .put("directions_options", JSONObject().put("units", "kilometers"))
             .toString()
 
+        debug("VALHALLA ROUTE REQUEST: start=${current.lat},${current.lon}; heading=$heading; distance=$distance; destination=${destination.lat},${destination.lon}")
         val response = JSONObject(post("$baseUrl/route", payload))
-        val trip = response.optJSONObject("trip") ?: return null
+        val trip = response.optJSONObject("trip") ?: run {
+            debug("VALHALLA ROUTE RESPONSE: missing trip; body=${response.toString().take(4000)}")
+            return null
+        }
         val legs = trip.optJSONArray("legs") ?: return null
         val leg = legs.optJSONObject(0) ?: return null
-        val maneuvers = leg.optJSONArray("maneuvers") ?: return null
+        val maneuvers = leg.optJSONArray("maneuvers") ?: run {
+            debug("VALHALLA ROUTE RESPONSE: missing maneuvers; leg=${leg.toString().take(4000)}")
+            return null
+        }
+        debug("VALHALLA ROUTE MANEUVERS: " + (0 until maneuvers.length()).joinToString(" || ") { i ->
+            val m = maneuvers.optJSONObject(i)
+            if (m == null) "#$i <invalid>" else
+                "#$i type=${m.optInt("type", -1)} exitCount=${if (m.has("roundabout_exit_count") && !m.isNull("roundabout_exit_count")) m.opt("roundabout_exit_count") else "null"} length=${m.optDouble("length", 0.0)} instruction=${m.optString("instruction", "")}"
+        })
         var maneuverIndex = -1
         var maneuver: JSONObject? = null
 

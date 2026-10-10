@@ -200,7 +200,7 @@ class NavigationNotificationListener : NotificationListenerService() {
 
             getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit()
-                .putString(KEY_DEBUG, result.toString())
+                .putString("android_auto_debug", result.toString())
                 .apply()
 
             Log.d("NavBandAndroidAuto", "Captured Android Auto notification ID 2")
