@@ -15,6 +15,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
@@ -214,6 +216,28 @@ class MainActivity : ComponentActivity() {
                 },
                 style = MaterialTheme.typography.bodySmall
             )
+
+            if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) !=
+                    PackageManager.PERMISSION_GRANTED
+            ) {
+                Text(
+                    text = "GPS in background non autorizzato: la posizione potrebbe non essere disponibile quando NavBand lavora in secondo piano.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Button(
+                    onClick = {
+                        val settingsIntent = Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:$packageName")
+                        )
+                        startActivity(settingsIntent)
+                    }
+                ) {
+                    Text("Impostazioni permessi GPS")
+                }
+            }
 
             /*
              * BLUETOOTH
