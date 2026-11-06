@@ -163,6 +163,10 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
             "entryRoadScore=$entryRoadScore",
             "entryAngle=${"%.1f".format(java.util.Locale.ROOT, entryAngle)}",
             "target=${target.names.joinToString(" / ")}",
+            "targetPoint=${target.point.lat},${target.point.lon}",
+            "targetEvidenceEdges=" + context.target.edges.joinToString(" || ") {
+                "edgeId=${it.edgeId};wayId=${it.wayId};names=${it.names};probeBearing=${it.probeBearingDegrees};correlated=${it.correlatedPoint}"
+            },
             "targetWayMatch=$targetWayMatch",
             "targetRoadScore=$targetScore",
             "orderedExits=" + ordered.mapIndexed { index, branch ->
