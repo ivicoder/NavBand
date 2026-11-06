@@ -81,6 +81,9 @@ object NavigationDebugLog {
         }
     }
 
+    fun readPreview(context: Context, maxChars: Int = 24_000): String =
+        read(context).takeLast(maxChars)
+
     private fun writeLineLocked(context: Context, line: String) {
         val file = File(context.filesDir, LOG_FILE)
         file.appendText("\n$line\n", Charsets.UTF_8)
