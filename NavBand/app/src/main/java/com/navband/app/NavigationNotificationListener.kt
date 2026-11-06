@@ -458,7 +458,14 @@ class NavigationNotificationListener : NotificationListenerService() {
                 text = text,
                 subText = subText,
                 image = image
-            ) ?: return
+            ) ?: run {
+                NavigationDebugLog.append(
+                    this,
+                    "PARSER",
+                    "NO EVENT: title=${title ?: "null"}; text=${text ?: "null"}; subText=${subText ?: "null"}"
+                )
+                return
+            }
 
         /*
          * BITMAP CLASSIFIER
@@ -493,6 +500,11 @@ class NavigationNotificationListener : NotificationListenerService() {
                                 "direction=${prediction.direction}, " +
                                 "confidence=${prediction.confidence}"
                         )
+                        NavigationDebugLog.append(
+                            this,
+                            "BITMAP_CLASSIFIER",
+                            "label=${prediction.label}; direction=${prediction.direction}; confidence=${prediction.confidence}"
+                        )
 
                         parsedEvent.copy(
                             direction = prediction.direction
@@ -504,6 +516,11 @@ class NavigationNotificationListener : NotificationListenerService() {
                         Log.d(
                             "NavBandBitmap",
                             "Classifier: no confident result; fallback=$fallbackDirection"
+                        )
+                        NavigationDebugLog.append(
+                            this,
+                            "BITMAP_CLASSIFIER",
+                            "no confident result; fallback=$fallbackDirection"
                         )
 
                         if (fallbackDirection != null) {
@@ -602,5 +619,12 @@ class NavigationNotificationListener : NotificationListenerService() {
         sbn: StatusBarNotification?
     ) {
         super.onNotificationRemoved(sbn)
+        if (sbn?.packageName == MAPS_PACKAGE) {
+            NavigationDebugLog.append(
+                this,
+                "MAPS_NOTIFICATION_REMOVED",
+                "key=${sbn.key}; id=${sbn.id}; postTime=${sbn.postTime}"
+            )
+        }
     }
 }
