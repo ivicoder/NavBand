@@ -88,7 +88,7 @@ object NavigationDebugLog {
         val file = File(context.filesDir, LOG_FILE)
         file.appendText("\n$line\n", Charsets.UTF_8)
 
-        if (file.length() > MAX_LOG_CHARS) {
+        if (file.length() > MAX_LOG_CHARS.toLong()) {
             val current = file.readText(Charsets.UTF_8)
             val kept = current.takeLast(MAX_LOG_CHARS)
             file.writeText(
