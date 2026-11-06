@@ -547,37 +547,6 @@ class MainActivity : ComponentActivity() {
         NotificationForwarder(this).send(event)
     }
 
-    private fun testVibration(
-        direction: NavigationDirection
-    ) {
-
-        val event =
-            NavigationEvent(
-                direction = direction
-            )
-
-        VibrationEngine.vibrate(
-            context = this,
-            event = event
-        )
-    }
-
-    private fun testRoundabout(
-        exit: Int
-    ) {
-
-        val event =
-            NavigationEvent(
-                direction = NavigationDirection.ROUNDABOUT,
-                roundaboutExit = exit
-            )
-
-        VibrationEngine.vibrate(
-            context = this,
-            event = event
-        )
-    }
-
     private fun showNavBandNotification() {
 
         if (
@@ -645,31 +614,3 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@androidx.compose.runtime.Composable
-private fun VibrationButtonRow(
-    leftText: String,
-    rightText: String,
-    onLeft: () -> Unit,
-    onRight: () -> Unit
-) {
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-
-        Button(
-            onClick = onLeft,
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(leftText)
-        }
-
-        Button(
-            onClick = onRight,
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(rightText)
-        }
-    }
-}
