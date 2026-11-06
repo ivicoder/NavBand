@@ -148,7 +148,17 @@ class RoundaboutRuntime(
                 Manifest.permission.ACCESS_COARSE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
 
-        debug("GPS PERMISSION: fine=$fine coarse=$coarse")
+        val background =
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                ContextCompat.checkSelfPermission(
+                    appContext,
+                    Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+
+        debug("GPS PERMISSION: fine=$fine coarse=$coarse background=$background")
 
         if (!fine && !coarse) {
             debug("GPS PERMISSION: NOT GRANTED")
@@ -270,12 +280,12 @@ class RoundaboutRuntime(
             }
 
             debug(
-                "GPS FRESH: waiting up to 3000 ms via " +
+                "GPS FRESH: waiting up to 10000 ms via " +
                     activeProviders.joinToString()
             )
 
             val received = finished.await(
-                3000,
+                10000,
                 java.util.concurrent.TimeUnit.MILLISECONDS
             )
 
