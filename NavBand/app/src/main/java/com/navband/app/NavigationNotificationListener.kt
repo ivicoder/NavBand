@@ -445,7 +445,7 @@ class NavigationNotificationListener : NotificationListenerService() {
         NavigationDebugLog.append(
             this,
             "MAPS_NOTIFICATION",
-            "key=${sbn.key}; id=${sbn.id}; title=${title ?: "null"}; text=${text ?: "null"}; subText=${subText ?: "null"}; extras=\\n${result}"
+            "key=${sbn.key}; id=${sbn.id}; title=${title ?: "null"}; text=${text ?: "null"}; subText=${subText ?: "null"}; extras=\n${result}"
         )
 
         /*
