@@ -36,6 +36,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -48,6 +50,28 @@ class MainActivity : ComponentActivity() {
     )
 
     private var showBluetoothScreen by mutableStateOf(false)
+    private var navigationSessionActive by mutableStateOf(false)
+    private var navigationDebugText by mutableStateOf("Nessuna sessione registrata.")
+
+    private val navigationExportLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.CreateDocument("text/plain")
+        ) { uri ->
+            if (uri == null) return@registerForActivityResult
+            try {
+                val logText = NavigationDebugLog.read(this)
+                contentResolver.openOutputStream(uri)?.use { output ->
+                    output.write(logText.toByteArray(Charsets.UTF_8))
+                }
+                Toast.makeText(this, "Log navigazione esportato", Toast.LENGTH_SHORT).show()
+            } catch (error: Exception) {
+                Toast.makeText(
+                    this,
+                    "Errore esportazione log: ${error.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
 
     private val exportLogLauncher =
         registerForActivityResult(
@@ -83,6 +107,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        navigationSessionActive = NavigationDebugLog.isSessionActive(this)
+        navigationDebugText = NavigationDebugLog.read(this)
 
         requestNotificationPermission()
         requestBluetoothPermissions()
@@ -121,6 +148,14 @@ class MainActivity : ComponentActivity() {
     @androidx.compose.runtime.Composable
     private fun MainScreen() {
 
+        LaunchedEffect(Unit) {
+            while (true) {
+                navigationSessionActive = NavigationDebugLog.isSessionActive(this@MainActivity)
+                navigationDebugText = NavigationDebugLog.read(this@MainActivity)
+                delay(750)
+            }
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -141,13 +176,44 @@ class MainActivity : ComponentActivity() {
                 text = "NavBand è attivo"
             )
 
-            Button(
-                onClick = {
-                    recreate()
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Aggiorna debug")
+                Button(
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        if (navigationSessionActive) {
+                            NavigationDebugLog.stopSession(this@MainActivity)
+                            navigationSessionActive = false
+                        } else {
+                            NavigationDebugLog.startSession(this@MainActivity)
+                            navigationSessionActive = true
+                        }
+                        navigationDebugText = NavigationDebugLog.read(this@MainActivity)
+                    }
+                ) {
+                    Text(if (navigationSessionActive) "Termina registrazione" else "Avvia registrazione")
+                }
+
+                Button(
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        navigationExportLauncher.launch("NavBand_navigazione.txt")
+                    }
+                ) {
+                    Text("Esporta log TXT")
+                }
             }
+
+            Text(
+                text = if (navigationSessionActive) {
+                    "REGISTRAZIONE NAVIGAZIONE ATTIVA"
+                } else {
+                    "Registrazione navigazione non attiva"
+                },
+                style = MaterialTheme.typography.bodySmall
+            )
 
             /*
              * BLUETOOTH
@@ -201,110 +267,6 @@ class MainActivity : ComponentActivity() {
             }
 
             /*
-             * TEST VIBRAZIONI
-             */
-
-            Text(
-                text = "TEST VIBRAZIONI",
-                style = MaterialTheme.typography.titleLarge
-            )
-
-            Text(
-                text = "Testa direttamente il VibrationEngine"
-            )
-
-            VibrationButtonRow(
-                leftText = "← Sinistra",
-                rightText = "Destra →",
-                onLeft = {
-                    testVibration(
-                        NavigationDirection.LEFT
-                    )
-                },
-                onRight = {
-                    testVibration(
-                        NavigationDirection.RIGHT
-                    )
-                }
-            )
-
-            VibrationButtonRow(
-                leftText = "↙ Leggera",
-                rightText = "Leggera ↘",
-                onLeft = {
-                    testVibration(
-                        NavigationDirection.SLIGHT_LEFT
-                    )
-                },
-                onRight = {
-                    testVibration(
-                        NavigationDirection.SLIGHT_RIGHT
-                    )
-                }
-            )
-
-            VibrationButtonRow(
-                leftText = "↑ Dritto",
-                rightText = "↩ Inversione",
-                onLeft = {
-                    testVibration(
-                        NavigationDirection.STRAIGHT
-                    )
-                },
-                onRight = {
-                    testVibration(
-                        NavigationDirection.U_TURN
-                    )
-                }
-            )
-
-            /*
-             * TEST ROTATORIA
-             */
-
-            Text(
-                text = "TEST ROTATORIA",
-                style = MaterialTheme.typography.titleLarge
-            )
-
-            Text(
-                text = "Il numero di impulsi corrisponde all'uscita"
-            )
-
-            VibrationButtonRow(
-                leftText = "Rotatoria 1",
-                rightText = "Rotatoria 2",
-                onLeft = {
-                    testRoundabout(1)
-                },
-                onRight = {
-                    testRoundabout(2)
-                }
-            )
-
-            VibrationButtonRow(
-                leftText = "Rotatoria 3",
-                rightText = "Rotatoria 4",
-                onLeft = {
-                    testRoundabout(3)
-                },
-                onRight = {
-                    testRoundabout(4)
-                }
-            )
-
-            VibrationButtonRow(
-                leftText = "Rotatoria 5",
-                rightText = "Rotatoria 6",
-                onLeft = {
-                    testRoundabout(5)
-                },
-                onRight = {
-                    testRoundabout(6)
-                }
-            )
-
-            /*
              * DEBUG MAPS
              */
 
@@ -346,8 +308,12 @@ class MainActivity : ComponentActivity() {
             }
 
             Text(
-                text = NavigationNotificationListener
-                    .getDebug(this@MainActivity),
+                text = "LOG SESSIONE NAVIGAZIONE",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            Text(
+                text = navigationDebugText,
                 style = MaterialTheme.typography.bodySmall
             )
         }
