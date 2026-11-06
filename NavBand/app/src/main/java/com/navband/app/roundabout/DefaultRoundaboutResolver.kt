@@ -100,12 +100,23 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
 
         val exit = exitIndex + 1
 
+        val entryWayMatch =
+            sameWay(entry, context.current.edges)
+
+        val entryRoadScore =
+            roadScore(entry.names, context.current.roadName)
+
+        val entryAngle =
+            angularDistance(
+                entry.bearing,
+                bearing(center, context.current.point)
+            )
+
         val entryStrong =
-            sameWay(entry, context.current.edges) ||
-                roadScore(
-                    entry.names,
-                    context.current.roadName
-                ) >= 82
+            entryWayMatch || entryRoadScore >= 82
+
+        val targetWayMatch =
+            sameWay(target, context.target.edges)
 
         val targetScore =
             roadScore(
@@ -113,10 +124,12 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
                 context.target.roadName
             )
 
+        // A weak or geometrically uncertain entry must never produce HIGH
+        // confidence just because the target road name matches perfectly.
         val score = min(
             100,
-            30 +
-                (if (entryStrong) 30 else 10) +
+            20 +
+                (if (entryStrong) 30 else 0) +
                 when {
                     targetScore >= 100 -> 35
                     targetScore >= 82 -> 25
@@ -135,19 +148,32 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
 
         val resolved =
             exit > 0 &&
+                entryStrong &&
                 targetScore >= 82 &&
-                score >= 65
+                score >= 85
 
         val reasons = mutableListOf(
             "branches=${branches.size}",
+            "branchCandidates=" + branches.joinToString(" || ") {
+                "${it.names.joinToString("/")};bearing=${"%.1f".format(java.util.Locale.ROOT, it.bearing)};wayIds=${it.wayIds}"
+            },
             "entry=${entry.names.joinToString(" / ")}",
+            "entryBearing=${"%.1f".format(java.util.Locale.ROOT, entry.bearing)}",
+            "entryWayMatch=$entryWayMatch",
+            "entryRoadScore=$entryRoadScore",
+            "entryAngle=${"%.1f".format(java.util.Locale.ROOT, entryAngle)}",
             "target=${target.names.joinToString(" / ")}",
+            "targetWayMatch=$targetWayMatch",
             "targetRoadScore=$targetScore",
-            "exit=$exit"
+            "orderedExits=" + ordered.mapIndexed { index, branch ->
+                "${index + 1}:${branch.names.joinToString("/")};bearing=${"%.1f".format(java.util.Locale.ROOT, branch.bearing)}"
+            }.joinToString(" || "),
+            "exit=$exit",
+            "resolved=$resolved"
         )
 
         if (!entryStrong) {
-            reasons += "entry match non forte"
+            reasons += "entry match non forte: uscita non confermata"
         }
 
         return RoundaboutDecision(
