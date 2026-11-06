@@ -61,7 +61,7 @@ class NavigationNotificationListener : NotificationListenerService() {
                     Context.MODE_PRIVATE
                 )
                 val timestamp = java.text.SimpleDateFormat(
-                    "HH:mm:ss",
+                    "HH:mm:ss.SSS",
                     java.util.Locale.ITALY
                 ).format(java.util.Date())
                 val previous = prefs.getString(KEY_DEBUG, "").orEmpty()
@@ -71,6 +71,12 @@ class NavigationNotificationListener : NotificationListenerService() {
                 prefs.edit()
                     .putString(KEY_DEBUG, updated)
                     .apply()
+
+                NavigationDebugLog.append(
+                    this,
+                    "ROUNDABOUT_RUNTIME",
+                    message
+                )
             }
     }
 
@@ -436,6 +442,12 @@ class NavigationNotificationListener : NotificationListenerService() {
             )
             .apply()
 
+        NavigationDebugLog.append(
+            this,
+            "MAPS_NOTIFICATION",
+            "key=${sbn.key}; id=${sbn.id}; title=${title ?: "null"}; text=${text ?: "null"}; subText=${subText ?: "null"}; extras=\\n${result}"
+        )
+
         /*
          * PARSER
          */
@@ -455,6 +467,12 @@ class NavigationNotificationListener : NotificationListenerService() {
          * Usiamo la bitmap di Google Maps soltanto quando
          * il parser non ha riconosciuto una direzione.
          */
+        NavigationDebugLog.append(
+            this,
+            "PARSER",
+            "direction=${parsedEvent.direction}; distance=${parsedEvent.distance}; instruction=${parsedEvent.instruction}; subText=${parsedEvent.subText}; roundaboutExit=${parsedEvent.roundaboutExit}"
+        )
+
         val event =
             if (
                 parsedEvent.direction == NavigationDirection.UNKNOWN &&
@@ -516,26 +534,67 @@ class NavigationNotificationListener : NotificationListenerService() {
          * dall'evento finale, dopo l'eventuale classificazione bitmap.
          */
 
+        NavigationDebugLog.append(
+            this,
+            "FINAL_EVENT",
+            "direction=${event.direction}; distance=${event.distance}; instruction=${event.instruction}; subText=${event.subText}; roundaboutExit=${event.roundaboutExit}"
+        )
+
         if (event.direction == NavigationDirection.ROUNDABOUT) {
             roundaboutExecutor.execute {
                 val resolvedEvent = try {
                     roundaboutRuntime.resolve(event)
-                } catch (_: Exception) {
+                } catch (error: Exception) {
+                    NavigationDebugLog.append(
+                        this,
+                        "PIPELINE_ERROR",
+                        "RoundaboutRuntime ${error.javaClass.simpleName}: ${error.message}"
+                    )
                     event
                 }
 
+                NavigationDebugLog.append(
+                    this,
+                    "VIBRATION",
+                    "dispatch direction=${resolvedEvent.direction}; exit=${resolvedEvent.roundaboutExit}"
+                )
                 VibrationEngine.vibrate(
                     context = this,
                     event = resolvedEvent
                 )
+                NavigationDebugLog.append(
+                    this,
+                    "FORWARDER",
+                    "sending direction=${resolvedEvent.direction}; exit=${resolvedEvent.roundaboutExit}"
+                )
                 forwarder.send(resolvedEvent)
+                NavigationDebugLog.append(
+                    this,
+                    "FORWARDER",
+                    "send() completed"
+                )
             }
         } else {
+            NavigationDebugLog.append(
+                this,
+                "VIBRATION",
+                "dispatch direction=${event.direction}"
+            )
             VibrationEngine.vibrate(
                 context = this,
                 event = event
             )
+            NavigationDebugLog.append(
+                this,
+                "FORWARDER",
+                "sending direction=${event.direction}"
+            )
             forwarder.send(event)
+            NavigationDebugLog.append(
+                this,
+                "FORWARDER",
+                "send() completed"
+            )
         }
     }
 
