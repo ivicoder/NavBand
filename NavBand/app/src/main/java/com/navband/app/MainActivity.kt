@@ -109,7 +109,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         navigationSessionActive = NavigationDebugLog.isSessionActive(this)
-        navigationDebugText = NavigationDebugLog.read(this)
+        navigationDebugText = NavigationDebugLog.readPreview(this)
 
         requestNotificationPermission()
         requestBluetoothPermissions()
@@ -151,7 +151,7 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(Unit) {
             while (true) {
                 navigationSessionActive = NavigationDebugLog.isSessionActive(this@MainActivity)
-                navigationDebugText = NavigationDebugLog.read(this@MainActivity)
+                navigationDebugText = NavigationDebugLog.readPreview(this@MainActivity)
                 delay(750)
             }
         }
@@ -190,7 +190,7 @@ class MainActivity : ComponentActivity() {
                             NavigationDebugLog.startSession(this@MainActivity)
                             navigationSessionActive = true
                         }
-                        navigationDebugText = NavigationDebugLog.read(this@MainActivity)
+                        navigationDebugText = NavigationDebugLog.readPreview(this@MainActivity)
                     }
                 ) {
                     Text(if (navigationSessionActive) "Termina registrazione" else "Avvia registrazione")
