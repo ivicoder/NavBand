@@ -1,6 +1,7 @@
 package com.navband.app
 
 import com.navband.app.roundabout.RoundaboutRuntime
+import android.os.SystemClock
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -46,6 +47,7 @@ class NavigationNotificationListener : NotificationListenerService() {
 
     private lateinit var forwarder: NotificationForwarder
     private lateinit var roundaboutRuntime: RoundaboutRuntime
+    private lateinit var locationTracker: NavigationLocationTracker
     private val roundaboutExecutor: ExecutorService =
         Executors.newSingleThreadExecutor()
 
@@ -54,6 +56,10 @@ class NavigationNotificationListener : NotificationListenerService() {
 
         forwarder =
             NotificationForwarder(this)
+        locationTracker = NavigationLocationTracker(this) { message ->
+            NavigationDebugLog.append(this, "LOCATION_TRACKER", message)
+        }
+        locationTracker.start()
         roundaboutRuntime =
             RoundaboutRuntime(this) { message ->
                 val prefs = getSharedPreferences(
@@ -81,6 +87,7 @@ class NavigationNotificationListener : NotificationListenerService() {
     }
 
     override fun onDestroy() {
+        locationTracker.stop()
         roundaboutExecutor.shutdownNow()
         super.onDestroy()
     }
@@ -223,6 +230,16 @@ class NavigationNotificationListener : NotificationListenerService() {
         if (packageName != MAPS_PACKAGE) {
             return
         }
+
+        val notificationReceivedAt = System.currentTimeMillis()
+        val notificationReceivedElapsed = SystemClock.elapsedRealtimeNanos()
+        NavigationDebugLog.append(
+            this,
+            "MAPS_EVENT_RECEIVED",
+            "key=${sbn.key}; id=${sbn.id}; postTime=${sbn.postTime}; " +
+                "receivedAtMs=$notificationReceivedAt; receivedElapsedNs=$notificationReceivedElapsed; " +
+                "ongoing=${sbn.isOngoing}; title=${title ?: "null"}; text=${text ?: "null"}; subText=${subText ?: "null"}"
+        )
 
         /*
          * IMAGE EXTRACTION
@@ -558,9 +575,32 @@ class NavigationNotificationListener : NotificationListenerService() {
         )
 
         if (event.direction == NavigationDirection.ROUNDABOUT) {
+            // Capture before queuing route/network work: never use a later fix.
+            val locationSnapshot = locationTracker.snapshotNow()
+            NavigationDebugLog.append(
+                this,
+                "ROUNDABOUT_SNAPSHOT",
+                "key=${sbn.key}; id=${sbn.id}; postTime=${sbn.postTime}; " +
+                    if (locationSnapshot == null) {
+                        "snapshot=NULL"
+                    } else {
+                        val fix = locationSnapshot.location
+                        "source=${locationSnapshot.source}; ageMs=${locationSnapshot.ageMillis()}; " +
+                            "lat=${fix.latitude}; lon=${fix.longitude}; " +
+                            "accuracy=${if (fix.hasAccuracy()) fix.accuracy else "unknown"}; " +
+                            "bearing=${if (fix.hasBearing()) fix.bearing else "unknown"}; " +
+                            "mock=${locationSnapshot.isMock()}; provider=${fix.provider}; " +
+                            "fixTimeMs=${fix.time}; fixElapsedNs=${fix.elapsedRealtimeNanos}"
+                    }
+            )
             roundaboutExecutor.execute {
+                NavigationDebugLog.append(
+                    this,
+                    "ROUNDABOUT_RESOLUTION",
+                    "START key=${sbn.key}; id=${sbn.id}; postTime=${sbn.postTime}"
+                )
                 val resolvedEvent = try {
-                    roundaboutRuntime.resolve(event)
+                    roundaboutRuntime.resolve(event, locationSnapshot)
                 } catch (error: Exception) {
                     NavigationDebugLog.append(
                         this,
@@ -589,6 +629,11 @@ class NavigationNotificationListener : NotificationListenerService() {
                     this,
                     "FORWARDER",
                     "send() completed"
+                )
+                NavigationDebugLog.append(
+                    this,
+                    "ROUNDABOUT_RESOLUTION",
+                    "END key=${sbn.key}; exit=${resolvedEvent.roundaboutExit}"
                 )
             }
         } else {
