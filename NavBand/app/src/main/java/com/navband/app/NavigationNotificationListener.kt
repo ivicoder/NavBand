@@ -1,7 +1,6 @@
 package com.navband.app
 
 import com.navband.app.roundabout.RoundaboutRuntime
-import android.os.SystemClock
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -47,7 +46,6 @@ class NavigationNotificationListener : NotificationListenerService() {
 
     private lateinit var forwarder: NotificationForwarder
     private lateinit var roundaboutRuntime: RoundaboutRuntime
-    private lateinit var locationTracker: NavigationLocationTracker
     private val roundaboutExecutor: ExecutorService =
         Executors.newSingleThreadExecutor()
 
@@ -56,10 +54,6 @@ class NavigationNotificationListener : NotificationListenerService() {
 
         forwarder =
             NotificationForwarder(this)
-        locationTracker = NavigationLocationTracker(this) { message ->
-            NavigationDebugLog.append(this, "LOCATION_TRACKER", message)
-        }
-        locationTracker.start()
         roundaboutRuntime =
             RoundaboutRuntime(this) { message ->
                 val prefs = getSharedPreferences(
@@ -87,7 +81,6 @@ class NavigationNotificationListener : NotificationListenerService() {
     }
 
     override fun onDestroy() {
-        locationTracker.stop()
         roundaboutExecutor.shutdownNow()
         super.onDestroy()
     }
@@ -230,34 +223,6 @@ class NavigationNotificationListener : NotificationListenerService() {
         if (packageName != MAPS_PACKAGE) {
             return
         }
-
-        val notificationReceivedAt = System.currentTimeMillis()
-        val notificationReceivedElapsed = SystemClock.elapsedRealtimeNanos()
-        NavigationDebugLog.append(
-            this,
-            "MAPS_EVENT_RECEIVED",
-            "key=${sbn.key}; id=${sbn.id}; postTime=${sbn.postTime}; " +
-                "receivedAtMs=$notificationReceivedAt; receivedElapsedNs=$notificationReceivedElapsed; " +
-                "ongoing=${sbn.isOngoing}; title=${title ?: "null"}; text=${text ?: "null"}; subText=${subText ?: "null"}"
-        )
-        // Take the position snapshot before bitmap classification or route work.
-        val notificationLocationSnapshot = locationTracker.snapshotNow()
-        NavigationDebugLog.append(
-            this,
-            "MAPS_LOCATION_SNAPSHOT",
-            "key=${sbn.key}; id=${sbn.id}; " +
-                if (notificationLocationSnapshot == null) {
-                    "snapshot=NULL"
-                } else {
-                    val fix = notificationLocationSnapshot.location
-                    "source=${notificationLocationSnapshot.source}; ageMs=${notificationLocationSnapshot.ageMillis()}; " +
-                        "lat=${fix.latitude}; lon=${fix.longitude}; " +
-                        "accuracy=${if (fix.hasAccuracy()) fix.accuracy else "unknown"}; " +
-                        "bearing=${if (fix.hasBearing()) fix.bearing else "unknown"}; " +
-                        "mock=${notificationLocationSnapshot.isMock()}; provider=${fix.provider}; " +
-                        "fixTimeMs=${fix.time}; fixElapsedNs=${fix.elapsedRealtimeNanos}"
-                }
-        )
 
         /*
          * IMAGE EXTRACTION
@@ -593,8 +558,6 @@ class NavigationNotificationListener : NotificationListenerService() {
         )
 
         if (event.direction == NavigationDirection.ROUNDABOUT) {
-            // Use the position paired with this Maps notification, not a later fix.
-            val locationSnapshot = notificationLocationSnapshot
             roundaboutExecutor.execute {
                 NavigationDebugLog.append(
                     this,
@@ -602,7 +565,7 @@ class NavigationNotificationListener : NotificationListenerService() {
                     "START key=${sbn.key}; id=${sbn.id}; postTime=${sbn.postTime}"
                 )
                 val resolvedEvent = try {
-                    roundaboutRuntime.resolve(event, locationSnapshot)
+                    roundaboutRuntime.resolve(event)
                 } catch (error: Exception) {
                     NavigationDebugLog.append(
                         this,
