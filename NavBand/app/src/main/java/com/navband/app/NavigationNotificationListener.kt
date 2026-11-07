@@ -240,6 +240,24 @@ class NavigationNotificationListener : NotificationListenerService() {
                 "receivedAtMs=$notificationReceivedAt; receivedElapsedNs=$notificationReceivedElapsed; " +
                 "ongoing=${sbn.isOngoing}; title=${title ?: "null"}; text=${text ?: "null"}; subText=${subText ?: "null"}"
         )
+        // Take the position snapshot before bitmap classification or route work.
+        val notificationLocationSnapshot = locationTracker.snapshotNow()
+        NavigationDebugLog.append(
+            this,
+            "MAPS_LOCATION_SNAPSHOT",
+            "key=${sbn.key}; id=${sbn.id}; " +
+                if (notificationLocationSnapshot == null) {
+                    "snapshot=NULL"
+                } else {
+                    val fix = notificationLocationSnapshot.location
+                    "source=${notificationLocationSnapshot.source}; ageMs=${notificationLocationSnapshot.ageMillis()}; " +
+                        "lat=${fix.latitude}; lon=${fix.longitude}; " +
+                        "accuracy=${if (fix.hasAccuracy()) fix.accuracy else "unknown"}; " +
+                        "bearing=${if (fix.hasBearing()) fix.bearing else "unknown"}; " +
+                        "mock=${notificationLocationSnapshot.isMock()}; provider=${fix.provider}; " +
+                        "fixTimeMs=${fix.time}; fixElapsedNs=${fix.elapsedRealtimeNanos}"
+                }
+        )
 
         /*
          * IMAGE EXTRACTION
@@ -575,24 +593,8 @@ class NavigationNotificationListener : NotificationListenerService() {
         )
 
         if (event.direction == NavigationDirection.ROUNDABOUT) {
-            // Capture before queuing route/network work: never use a later fix.
-            val locationSnapshot = locationTracker.snapshotNow()
-            NavigationDebugLog.append(
-                this,
-                "ROUNDABOUT_SNAPSHOT",
-                "key=${sbn.key}; id=${sbn.id}; postTime=${sbn.postTime}; " +
-                    if (locationSnapshot == null) {
-                        "snapshot=NULL"
-                    } else {
-                        val fix = locationSnapshot.location
-                        "source=${locationSnapshot.source}; ageMs=${locationSnapshot.ageMillis()}; " +
-                            "lat=${fix.latitude}; lon=${fix.longitude}; " +
-                            "accuracy=${if (fix.hasAccuracy()) fix.accuracy else "unknown"}; " +
-                            "bearing=${if (fix.hasBearing()) fix.bearing else "unknown"}; " +
-                            "mock=${locationSnapshot.isMock()}; provider=${fix.provider}; " +
-                            "fixTimeMs=${fix.time}; fixElapsedNs=${fix.elapsedRealtimeNanos}"
-                    }
-            )
+            // Use the position paired with this Maps notification, not a later fix.
+            val locationSnapshot = notificationLocationSnapshot
             roundaboutExecutor.execute {
                 NavigationDebugLog.append(
                     this,
