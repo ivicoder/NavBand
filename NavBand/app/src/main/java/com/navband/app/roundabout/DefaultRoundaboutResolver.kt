@@ -200,8 +200,10 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
             it.probeRadiusMeters != null &&
                 it.probeRadiusMeters!! <= 55.0
         }
-
-        val source = if (near.isNotEmpty()) near else edges
+        val nearBranches = buildBranchGroups(near, center)
+        val source = if (nearBranches.size >= 2) near else edges.filter {
+            it.probeRadiusMeters == null || it.probeRadiusMeters!! <= 75.0
+        }
 
         val usable = source
             .filter { it.auto }
@@ -224,7 +226,7 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
                     angularDistance(
                         branch.bearing,
                         bearing
-                    ) <= 65.0
+                    ) <= 35.0
             }
 
             if (existing == null) {
@@ -251,6 +253,34 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
         }
 
         return branches
+    }
+
+    private fun buildBranchGroups(
+        edges: List<RoadEdgeEvidence>,
+        center: GeoPoint
+    ): List<Branch> {
+        val usable = edges.filter { it.auto && !it.roundabout && it.names.isNotEmpty() }
+        val groups = mutableListOf<Branch>()
+        for (edge in usable) {
+            val direction = edgeBearing(edge, center) ?: continue
+            val existing = groups.firstOrNull { branch ->
+                sameRoadFamily(branch.names, edge.names) &&
+                    angularDistance(branch.bearing, direction) <= 35.0
+            }
+            if (existing == null) {
+                groups += Branch(
+                    id = "branch-${groups.size + 1}",
+                    names = edge.names.toMutableList(),
+                    wayIds = mutableSetOf<Long>().apply { edge.wayId?.let { add(it) } },
+                    bearings = mutableListOf(direction)
+                )
+            } else {
+                existing.bearings += direction
+                edge.wayId?.let { existing.wayIds += it }
+                edge.names.forEach { name -> if (name !in existing.names) existing.names += name }
+            }
+        }
+        return groups
     }
 
     private fun findEntryBranch(
@@ -435,9 +465,7 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
                 val na = normalize(a)
                 val nb = normalize(b)
 
-                na == nb ||
-                    na.contains(nb) ||
-                    nb.contains(na)
+                na == nb
             }
         }
     }
@@ -446,16 +474,15 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
         edge: RoadEdgeEvidence,
         center: GeoPoint
     ): Double? {
-        edge.probeBearingDegrees
+        // The correlated point is the actual map-matched road position.
+        // Probe bearing is only a fallback because the probe can snap to a
+        // different nearby carriageway or to the roundabout itself.
+        edge.correlatedPoint
+            ?.let { return bearing(center, it) }
+
+        return edge.probeBearingDegrees
             ?.takeIf { it.isFinite() }
-            ?.let {
-                return normalizeBearing(it)
-            }
-
-        val point =
-            edge.correlatedPoint ?: return null
-
-        return bearing(center, point)
+            ?.let { normalizeBearing(it) }
     }
 
     private fun bearing(
