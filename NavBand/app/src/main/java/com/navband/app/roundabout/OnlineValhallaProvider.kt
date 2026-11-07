@@ -57,7 +57,7 @@ class OnlineValhallaProvider(
             )
             debug("VALHALLA: initial locate points=${search.size}")
             val located = locate(search)
-            debug("VALHALLA: initial locate results=${located.size}, edges=${located.sumOf { it.edges.size }}")
+            debug("VALHALLA: corridor locate results=${located.size}, edges=${located.sumOf { it.edges.size }}; samplePoints=${search.size}")
             if (located.isEmpty() && routeGeometry == null) {
                 debug("VALHALLA NULL: both route geometry and initial /locate are unavailable")
                 return null
@@ -79,7 +79,7 @@ class OnlineValhallaProvider(
             }
 
             debug("VALHALLA: route geometry points=${routePoints.size}")
-            debug("VALHALLA: locate roundabout correlated points=${locateRoundaboutPoints.size}")
+            debug("VALHALLA: locate roundabout correlated points=${locateRoundaboutPoints.size}; searchSamples=${search.size}")
             if (roundaboutPoints.isEmpty()) {
                 debug("VALHALLA NULL: neither /route maneuver geometry nor initial /locate identified the roundabout")
                 return null
@@ -122,9 +122,15 @@ class OnlineValhallaProvider(
                 return null
             }
 
-            val target = uniqueEdges.firstOrNull { edge ->
-                edge.names.any { roadMatches(it, targetRoad) }
+            val targetCandidates = uniqueEdges.filter { edge ->
+                !edge.roundabout && edge.names.any { roadMatches(it, targetRoad) }
             }
+            val target = targetCandidates.maxWithOrNull(
+                compareBy<RoadEdgeEvidence> { edge ->
+                    edge.names.maxOfOrNull { name -> roadMatchScore(name, targetRoad) } ?: 0
+                }.thenBy { edge -> if (edge.probeRadiusMeters == 55.0) 1 else 0 }
+            )
+            debug("VALHALLA: target candidates=${targetCandidates.size}; selectedWayId=${target?.wayId}; selectedEdgeId=${target?.edgeId}")
 
             debug("VALHALLA: target road matched=${target != null}; names=${uniqueEdges.flatMap { it.names }.distinct().take(12)}")
             debug("VALHALLA: context built successfully")
@@ -321,24 +327,38 @@ class OnlineValhallaProvider(
         val d = distance.coerceIn(40.0, 600.0)
 
         if (heading == null || !heading.isFinite()) {
-            return listOf(
-                current,
-                destinationPoint(current, 0.0, d),
-                destinationPoint(current, 90.0, d),
-                destinationPoint(current, 180.0, d),
-                destinationPoint(current, 270.0, d)
-            )
+            // No reliable course: sample a compact ring around the estimated
+            // maneuver distance instead of probing only the four cardinal points.
+            return buildList {
+                add(current)
+                for (radius in listOf(40.0, d * 0.5, d.coerceAtLeast(80.0))) {
+                    for (bearing in 0 until 360 step 45) {
+                        add(destinationPoint(current, bearing.toDouble(), radius))
+                    }
+                }
+            }.distinctBy { "${it.lat}:${it.lon}" }
         }
 
         val h = normalizeBearing(heading)
-        val forward = destinationPoint(current, h, d)
+        val lateral = normalizeBearing(h + 90.0)
+        val step = (d / 7.0).coerceIn(25.0, 45.0)
+        val maxAlong = (d + 45.0).coerceAtMost(650.0)
 
-        return listOf(
-            current,
-            forward,
-            destinationPoint(forward, h - 90.0, 45.0),
-            destinationPoint(forward, h + 90.0, 45.0)
-        )
+        // Probe the full corridor from the current fix to (and slightly beyond)
+        // the reported maneuver distance. This catches roundabouts whose first
+        // road edge is not returned by a single point at the current position.
+        return buildList {
+            add(current)
+            var along = step
+            while (along <= maxAlong) {
+                val corridorPoint = destinationPoint(current, h, along)
+                add(corridorPoint)
+                add(destinationPoint(corridorPoint, lateral, 22.0))
+                add(destinationPoint(corridorPoint, lateral + 180.0, 22.0))
+                along += step
+            }
+            add(destinationPoint(current, h, maxAlong))
+        }.distinctBy { "${it.lat}:${it.lon}" }
     }
 
     private fun buildProbes(center: GeoPoint): List<Probe> {
@@ -482,13 +502,26 @@ class OnlineValhallaProvider(
     private fun roadMatches(
         actual: String,
         target: String
-    ): Boolean {
+    ): Boolean = roadMatchScore(actual, target) >= 82
+
+    private fun roadMatchScore(
+        actual: String,
+        target: String
+    ): Int {
         val a = normalizeRoad(actual)
         val t = normalizeRoad(target)
+        if (a.isBlank() || t.isBlank()) return 0
+        if (a == t) return 100
+        if (a.contains(t) || t.contains(a)) return 82
 
-        return a == t ||
-            a.contains(t) ||
-            t.contains(a)
+        val left = a.split(" ").filter { it.isNotBlank() }.toSet()
+        val right = t.split(" ").filter { it.isNotBlank() }.toSet()
+        val overlap = left.intersect(right).size
+        return when {
+            overlap >= 2 -> 70
+            overlap == 1 -> 40
+            else -> 0
+        }
     }
 
     private fun normalizeRoad(
