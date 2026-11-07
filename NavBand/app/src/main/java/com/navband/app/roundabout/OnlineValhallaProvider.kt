@@ -125,12 +125,30 @@ class OnlineValhallaProvider(
             val targetCandidates = uniqueEdges.filter { edge ->
                 !edge.roundabout && edge.names.any { roadMatches(it, targetRoad) }
             }
+            val expectedTargetPoint = headingDegrees?.takeIf { it.isFinite() }?.let { heading ->
+                destinationPoint(
+                    current,
+                    heading,
+                    (distanceMeters ?: 150.0).coerceIn(40.0, 600.0)
+                )
+            }
             val target = targetCandidates.maxWithOrNull(
                 compareBy<RoadEdgeEvidence> { edge ->
                     edge.names.maxOfOrNull { name -> roadMatchScore(name, targetRoad) } ?: 0
-                }.thenBy { edge -> if (edge.probeRadiusMeters == 55.0) 1 else 0 }
+                }.thenBy { edge ->
+                    if (edge.probeRadiusMeters == 55.0) 1 else 0
+                }.thenBy { edge ->
+                    expectedTargetPoint?.let { expected ->
+                        edge.correlatedPoint?.let { -pointDistanceMeters(it, expected) }
+                    } ?: Double.NEGATIVE_INFINITY
+                }
             )
-            debug("VALHALLA: target candidates=${targetCandidates.size}; selectedWayId=${target?.wayId}; selectedEdgeId=${target?.edgeId}")
+            val targetOffsetMeters = if (target?.correlatedPoint != null && expectedTargetPoint != null) {
+                pointDistanceMeters(target.correlatedPoint, expectedTargetPoint)
+            } else {
+                null
+            }
+            debug("VALHALLA: target candidates=${targetCandidates.size}; selectedWayId=${target?.wayId}; selectedEdgeId=${target?.edgeId}; projectedTargetOffsetMeters=${targetOffsetMeters ?: "unknown"}")
 
             debug("VALHALLA: target road matched=${target != null}; names=${uniqueEdges.flatMap { it.names }.distinct().take(12)}")
             debug("VALHALLA: context built successfully")
