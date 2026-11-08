@@ -26,6 +26,29 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Prepare permanent APK signing key
+        shell: bash
+        env:
+          NAVBAND_KEYSTORE_BASE64: ${{ secrets.NAVBAND_KEYSTORE_BASE64 }}
+          NAVBAND_KEYSTORE_PASSWORD: ${{ secrets.NAVBAND_KEYSTORE_PASSWORD }}
+          NAVBAND_KEY_ALIAS: ${{ secrets.NAVBAND_KEY_ALIAS }}
+          NAVBAND_KEY_PASSWORD: ${{ secrets.NAVBAND_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in NAVBAND_KEYSTORE_BASE64 NAVBAND_KEYSTORE_PASSWORD NAVBAND_KEY_ALIAS NAVBAND_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::GitHub Actions secret $name is missing. Configure the permanent NavBand signing key first."
+              exit 1
+            fi
+          done
+
+          echo "$NAVBAND_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/navband-release.jks"
+          test -s "$RUNNER_TEMP/navband-release.jks"
+          echo "NAVBAND_KEYSTORE_PATH=$RUNNER_TEMP/navband-release.jks" >> "$GITHUB_ENV"
+          echo "NAVBAND_KEYSTORE_PASSWORD=$NAVBAND_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "NAVBAND_KEY_ALIAS=$NAVBAND_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "NAVBAND_KEY_PASSWORD=$NAVBAND_KEY_PASSWORD" >> "$GITHUB_ENV"
+
       - name: Setup Android SDK
         shell: bash
         run: |
@@ -57,9 +80,9 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
+      - name: Build signed debug APK
         working-directory: NavBand
-        run: gradle assembleDebug --stacktrace
+        run: gradle assembleDebug --stacktrace -PNAVBAND_VERSION_CODE=${{ github.run_number }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
