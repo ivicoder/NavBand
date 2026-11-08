@@ -362,17 +362,29 @@ class OnlineValhallaProvider(
         val step = (d / 7.0).coerceIn(25.0, 45.0)
         val maxAlong = (d + 45.0).coerceAtMost(650.0)
 
-        // Probe the full corridor from the current fix to (and slightly beyond)
-        // the reported maneuver distance. This catches roundabouts whose first
-        // road edge is not returned by a single point at the current position.
+        // Maps can keep the roundabout icon active for a short time after
+        // the device has reached the circle or its first metres of exit road.
+        // A forward-only corridor misses that geometry (the Test C trace showed
+        // GPS already beside the circle while /route projected straight ahead
+        // on Via Catauli). Sample a short reverse corridor as well as the
+        // forward maneuver corridor; this is detection only, not a GPS fallback.
         return buildList {
             add(current)
-            var along = step
-            while (along <= maxAlong) {
-                val corridorPoint = destinationPoint(current, h, along)
+
+            fun addCorridorSample(alongMeters: Double) {
+                val corridorPoint = destinationPoint(current, h, alongMeters)
                 add(corridorPoint)
                 add(destinationPoint(corridorPoint, lateral, 22.0))
                 add(destinationPoint(corridorPoint, lateral + 180.0, 22.0))
+            }
+
+            for (behind in listOf(25.0, 50.0, 75.0, 100.0)) {
+                addCorridorSample(-behind)
+            }
+
+            var along = step
+            while (along <= maxAlong) {
+                addCorridorSample(along)
                 along += step
             }
             add(destinationPoint(current, h, maxAlong))
