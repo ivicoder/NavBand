@@ -3,6 +3,7 @@ package com.navband.app
 import com.navband.app.roundabout.RoundaboutRuntime
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 
 import android.app.Notification
 import android.content.Context
@@ -48,6 +49,7 @@ class NavigationNotificationListener : NotificationListenerService() {
     private lateinit var roundaboutRuntime: RoundaboutRuntime
     private val roundaboutExecutor: ExecutorService =
         Executors.newSingleThreadExecutor()
+    private val latestMapsNotificationPostTime = AtomicLong(0L)
 
     override fun onCreate() {
         super.onCreate()
@@ -223,6 +225,18 @@ class NavigationNotificationListener : NotificationListenerService() {
         if (packageName != MAPS_PACKAGE) {
             return
         }
+
+        // Maps updates the same ongoing notification as navigation progresses.
+        // Keep its newest postTime so queued work cannot emit obsolete maneuvers.
+        val latestPostTime = latestMapsNotificationPostTime.updateAndGet { previous ->
+            maxOf(previous, sbn.postTime)
+        }
+        NavigationDebugLog.append(
+            this,
+            "MAPS_NOTIFICATION_META",
+            "key=${sbn.key}; id=${sbn.id}; postTime=${sbn.postTime}; when=${notification.`when`}; " +
+                "ongoing=${sbn.isOngoing}; category=${notification.category}; latestPostTime=$latestPostTime"
+        )
 
         /*
          * IMAGE EXTRACTION
@@ -559,6 +573,16 @@ class NavigationNotificationListener : NotificationListenerService() {
 
         if (event.direction == NavigationDirection.ROUNDABOUT) {
             roundaboutExecutor.execute {
+                val newestAtStart = latestMapsNotificationPostTime.get()
+                if (sbn.postTime < newestAtStart) {
+                    NavigationDebugLog.append(
+                        this,
+                        "ROUNDABOUT_RESOLUTION",
+                        "SKIP_STALE before resolve key=${sbn.key}; postTime=${sbn.postTime}; newest=$newestAtStart"
+                    )
+                    return@execute
+                }
+
                 NavigationDebugLog.append(
                     this,
                     "ROUNDABOUT_RESOLUTION",
@@ -573,6 +597,16 @@ class NavigationNotificationListener : NotificationListenerService() {
                         "RoundaboutRuntime ${error.javaClass.simpleName}: ${error.message}"
                     )
                     event
+                }
+
+                val newestBeforeDispatch = latestMapsNotificationPostTime.get()
+                if (sbn.postTime < newestBeforeDispatch) {
+                    NavigationDebugLog.append(
+                        this,
+                        "ROUNDABOUT_RESOLUTION",
+                        "SKIP_STALE after resolve key=${sbn.key}; postTime=${sbn.postTime}; newest=$newestBeforeDispatch; exit=${resolvedEvent.roundaboutExit}"
+                    )
+                    return@execute
                 }
 
                 NavigationDebugLog.append(
