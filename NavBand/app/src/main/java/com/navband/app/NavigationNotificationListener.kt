@@ -242,11 +242,31 @@ class NavigationNotificationListener : NotificationListenerService() {
          * IMAGE EXTRACTION
          */
 
+        var imageSource = "Origine non rilevata"
         val image =
             ImageExtractor.extract(
                 context = this,
-                notification = notification
+                notification = notification,
+                onSource = { source -> imageSource = source }
             )
+
+        if (image != null && NavigationDebugLog.isSessionActive(this)) {
+            val archivedName = MapsImageArchive.save(
+                context = this,
+                bitmap = image,
+                source = imageSource,
+                notificationKey = sbn.key,
+                postTime = sbn.postTime
+            )
+            NavigationDebugLog.append(
+                this,
+                "MAPS_IMAGE_CAPTURE",
+                "file=${archivedName ?: "SALVATAGGIO FALLITO"}; source=$imageSource; " +
+                    "size=${image.width}x${image.height}; notificationId=${sbn.id}; " +
+                    "postTime=${sbn.postTime}; title=${title ?: "null"}; " +
+                    "text=${text ?: "null"}; subText=${subText ?: "null"}"
+            )
+        }
 
         /*
          * Salva temporaneamente la Bitmap estratta
@@ -290,6 +310,10 @@ class NavigationNotificationListener : NotificationListenerService() {
 
         result.append("SUBTEXT\n")
         result.append(subText ?: "null")
+        result.append("\n\n")
+
+        result.append("IMAGE SOURCE\n")
+        result.append(imageSource)
         result.append("\n\n")
 
         result.append("IMAGE DEBUG\n")
