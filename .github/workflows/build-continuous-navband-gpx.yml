@@ -1,0 +1,137 @@
+name: Build continuous NavBand GPX
+
+on:
+  push:
+    branches:
+      - tools/navband-gpx-acquisition
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Acquire one continuous closed route
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, math, urllib.request, time
+          from xml.etree.ElementTree import Element, SubElement, ElementTree
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          # Ordered, real-road checkpoints. Last waypoint returns to the start,
+          # so mock playback ends where it began rather than falling back to live GPS.
+          checkpoints = [
+            ("START Via San Leucio", 41.0887122, 14.3137154),
+            ("B start Via San Leucio", 41.0905800, 14.3175300),
+            ("B target Via Gennaro Papa", 41.1006487, 14.3235474),
+            ("C target Via Catauli", 41.0959750, 14.3191690),
+            ("D target Via Caprioli", 41.0959280, 14.3170270),
+            ("B-C-D loop return", 41.0905800, 14.3175300),
+            ("E start San Nicola", 41.0614900, 14.3381500),
+            ("E target San Nicola", 41.0574000, 14.3413000),
+            ("Google Maps destination Via Appia", 41.0543793, 14.3313997),
+            ("CLOSED LOOP return to START", 41.0887122, 14.3137154),
+          ]
+          coords = [(lat,lon) for _,lat,lon in checkpoints]
+          path = ";".join(f"{lon:.7f},{lat:.7f}" for lat,lon in coords)
+          query = "?steps=true&geometries=geojson&overview=full&alternatives=false&continue_straight=false"
+          bases = [
+            "https://router.project-osrm.org/route/v1/driving/",
+            "https://routing.openstreetmap.de/routed-car/route/v1/driving/"
+          ]
+          data = None
+          errors=[]
+          for base in bases:
+            url=base+path+query
+            try:
+              req=urllib.request.Request(url,headers={"User-Agent":"NavBand-GPX-Acquisition/1.0"})
+              with urllib.request.urlopen(req,timeout=45) as response:
+                candidate=json.loads(response.read().decode("utf-8"))
+              if candidate.get("code")=="Ok" and candidate.get("routes"):
+                data=candidate
+                break
+              errors.append(base+" -> "+str(candidate.get("code")))
+            except Exception as e:
+              errors.append(base+" -> "+repr(e))
+          if data is None:
+            Path("failure.txt").write_text("Routing failed: "+" | ".join(errors))
+            raise SystemExit("No route acquired")
+          route=data["routes"][0]
+          snaps=[]
+          for (name,lat,lon),wp in zip(checkpoints,data.get("waypoints",[])):
+            loc=wp.get("location",[])
+            dist=float(wp.get("distance",999999))
+            snaps.append({"name":name,"input":[lat,lon],
+                          "snapped":[loc[1],loc[0]] if len(loc)>1 else None,
+                          "snap_m":round(dist,1),"road":wp.get("name","")})
+          max_snap=max(s["snap_m"] for s in snaps)
+          if max_snap>35:
+            Path("failure.txt").write_text("Rejected: checkpoint snap exceeds 35 m\n"+json.dumps(snaps,indent=2,ensure_ascii=False))
+            raise SystemExit(f"Unsafe checkpoint snap: {max_snap:.1f} m")
+          geometry=route.get("geometry",{}).get("coordinates",[])
+          if len(geometry)<100:
+            raise SystemExit(f"Route geometry unexpectedly short: {len(geometry)}")
+          # Detect route closure and length.
+          def hav(a,b):
+            R=6371000
+            p1,p2=math.radians(a[1]),math.radians(b[1])
+            dp=p2-p1; dl=math.radians(b[0]-a[0])
+            h=math.sin(dp/2)**2+math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
+            return 2*R*math.asin(math.sqrt(h))
+          closure=hav(geometry[0],geometry[-1])
+          if closure>40:
+            raise SystemExit(f"Route is not closed: {closure:.1f} m")
+          maneuvers=[]
+          for leg in route.get("legs",[]):
+            for step in leg.get("steps",[]):
+              m=step.get("maneuver",{})
+              if m.get("type") in ("roundabout","rotary","roundabout turn"):
+                maneuvers.append({"road":step.get("name",""),"type":m.get("type"),
+                  "modifier":m.get("modifier"),"exit":m.get("exit"),
+                  "distance_m":round(step.get("distance",0),1)})
+          # A single continuous GPX track with one segment; no gaps or restarts.
+          ns="http://www.topografix.com/GPX/1/1"
+          root=Element("gpx",{"version":"1.1","creator":"NavBand continuous OSRM route","xmlns":ns})
+          meta=SubElement(root,"metadata")
+          SubElement(meta,"name").text="NavBand Caserta - continuous closed image-acquisition circuit"
+          SubElement(meta,"desc").text=("One continuous routed track, all checkpoints in sequence, "
+            "closed back to its starting point to avoid a GPX-end position jump. "
+            "Google Maps must remain in active navigation during replay.")
+          SubElement(meta,"time").text=datetime.now(timezone.utc).isoformat()
+          trk=SubElement(root,"trk")
+          SubElement(trk,"name").text="NavBand_Caserta_CONTINUOUS_CLOSED_LOOP"
+          SubElement(trk,"desc").text=(f"{route['distance']/1000:.2f} km; {len(geometry)} geometry points; "
+            f"{len(maneuvers)} roundabout maneuver records; max checkpoint snap {max_snap:.1f} m")
+          seg=SubElement(trk,"trkseg")
+          for lon,lat in geometry:
+            SubElement(seg,"trkpt",{"lat":f"{lat:.7f}","lon":f"{lon:.7f}"})
+          for s in snaps:
+            lat,lon=s["snapped"]
+            w=SubElement(root,"wpt",{"lat":f"{lat:.7f}","lon":f"{lon:.7f}"})
+            SubElement(w,"name").text=s["name"]
+            SubElement(w,"desc").text=f"Road: {s['road']}; snap from reference {s['snap_m']} m"
+          Path("NavBand_Caserta_CONTINUOUS_CLOSED_LOOP.gpx").write_bytes(
+            __import__("xml.etree.ElementTree",fromlist=["tostring"]).tostring(root,encoding="utf-8",xml_declaration=True))
+          report={
+            "status":"OK","distance_km":round(route["distance"]/1000,2),
+            "duration_min":round(route["duration"]/60,1),"geometry_points":len(geometry),
+            "track_segments":1,"closed_loop_gap_m":round(closure,1),
+            "max_checkpoint_snap_m":round(max_snap,1),"checkpoints":snaps,
+            "roundabout_maneuvers":maneuvers
+          }
+          Path("NavBand_Caserta_CONTINUOUS_REPORT.json").write_text(json.dumps(report,indent=2,ensure_ascii=False))
+          print(json.dumps(report,indent=2,ensure_ascii=False))
+          PY
+      - name: Upload continuous GPX
+        uses: actions/upload-artifact@v4
+        with:
+          name: NavBand-Caserta-CONTINUOUS-GPX
+          path: |
+            NavBand_Caserta_CONTINUOUS_CLOSED_LOOP.gpx
+            NavBand_Caserta_CONTINUOUS_REPORT.json
+          if-no-files-found: error
