@@ -59,12 +59,15 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
         val entry = findEntryBranch(
             branches,
             context.current,
-            center
+            center,
+            context.routePoints
         )
 
         val target = findTargetBranch(
             branches,
-            context.target
+            context.target,
+            center,
+            context.routePoints
         )
 
         if (entry == null || target == null) {
@@ -78,14 +81,19 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
             )
         }
 
+        val traversalDirection = inferTraversalDirection(context.routePoints)
         val ordered = branches
             .filter { it.id != entry.id }
-            .sortedBy {
-                ccwDistance(
+            .map { branch ->
+                branch to traversalDistance(
                     entry.bearing,
-                    it.bearing
+                    branch.bearing,
+                    traversalDirection
                 )
             }
+            .filter { it.second > 0.001 }
+            .sortedBy { it.second }
+            .map { it.first }
 
         val exitIndex = ordered.indexOfFirst {
             it.id == target.id
@@ -200,12 +208,15 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
             it.probeRadiusMeters != null &&
                 it.probeRadiusMeters!! <= 55.0
         }
-
-        val source = if (near.isNotEmpty()) near else edges
+        val nearBranches = buildBranchGroups(near, center)
+        val source = if (nearBranches.size >= 2) near else edges.filter {
+            it.probeRadiusMeters == null || it.probeRadiusMeters!! <= 75.0
+        }
 
         val usable = source
             .filter { it.auto }
             .filterNot { it.roundabout }
+            .filterNot { isExcludedUse(it) }
             .filter { it.names.isNotEmpty() }
 
         val branches = mutableListOf<Branch>()
@@ -224,7 +235,7 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
                     angularDistance(
                         branch.bearing,
                         bearing
-                    ) <= 65.0
+                    ) <= 35.0
             }
 
             if (existing == null) {
@@ -253,19 +264,46 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
         return branches
     }
 
+    private fun buildBranchGroups(
+        edges: List<RoadEdgeEvidence>,
+        center: GeoPoint
+    ): List<Branch> {
+        val usable = edges.filter { it.auto && !it.roundabout && it.names.isNotEmpty() }
+        val groups = mutableListOf<Branch>()
+        for (edge in usable) {
+            val direction = edgeBearing(edge, center) ?: continue
+            val existing = groups.firstOrNull { branch ->
+                sameRoadFamily(branch.names, edge.names) &&
+                    angularDistance(branch.bearing, direction) <= 35.0
+            }
+            if (existing == null) {
+                groups += Branch(
+                    id = "branch-${groups.size + 1}",
+                    names = edge.names.toMutableList(),
+                    wayIds = mutableSetOf<Long>().apply { edge.wayId?.let { add(it) } },
+                    bearings = mutableListOf(direction)
+                )
+            } else {
+                existing.bearings += direction
+                edge.wayId?.let { existing.wayIds += it }
+                edge.names.forEach { name -> if (name !in existing.names) existing.names += name }
+            }
+        }
+        return groups
+    }
+
     private fun findEntryBranch(
         branches: List<Branch>,
         current: NavigationLocationEvidence,
-        center: GeoPoint
+        center: GeoPoint,
+        routePoints: List<GeoPoint>
     ): Branch? {
         val currentWayIds =
             current.edges.mapNotNull { it.wayId }.toSet()
 
         val currentBearing =
-            bearing(
-                center,
-                current.point
-            )
+            routeEdgeBearing(routePoints, center, last = false)
+                ?: bearing(center, current.point)
 
         return branches
             .map { branch ->
@@ -319,45 +357,92 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
 
     private fun findTargetBranch(
         branches: List<Branch>,
-        target: NavigationLocationEvidence
+        target: NavigationLocationEvidence,
+        center: GeoPoint,
+        routePoints: List<GeoPoint>
     ): Branch? {
         val targetWayIds =
             target.edges.mapNotNull { it.wayId }.toSet()
+        val targetBearing =
+            routeEdgeBearing(routePoints, center, last = true)
 
-        return branches
-            .map { branch ->
-                val wayMatch =
-                    branch.wayIds.any {
-                        targetWayIds.contains(it)
-                    }
+        val candidates = branches.map { branch ->
+            val wayMatch = branch.wayIds.any { targetWayIds.contains(it) }
+            val score = roadScore(branch.names, target.roadName)
+            val angleScore = targetBearing?.let {
+                max(0.0, 100.0 - angularDistance(branch.bearing, it))
+            } ?: 0.0
 
-                val score =
-                    roadScore(
-                        branch.names,
-                        target.roadName
-                    )
+            TargetCandidate(
+                branch = branch,
+                wayMatch = wayMatch,
+                roadScore = score,
+                totalScore = (if (wayMatch) 1000 else 0) + score * 5.0 + angleScore
+            )
+        }
 
-                Triple(
-                    branch,
-                    wayMatch,
-                    score +
-                        if (wayMatch) 1000 else 0
-                )
-            }
-            .maxByOrNull { it.third }
-            ?.let { candidate ->
-                if (
-                    candidate.second ||
-                    roadScore(
-                        candidate.first.names,
-                        target.roadName
-                    ) >= 82
-                ) {
-                    candidate.first
-                } else {
-                    null
-                }
-            }
+        val bestScore = candidates.maxOfOrNull { it.totalScore } ?: return null
+        val best = candidates.filter { kotlin.math.abs(it.totalScore - bestScore) < 0.001 }
+        if (best.size != 1) {
+            // A repeated street name without a unique way ID or route geometry
+            // is ambiguous: do not guess an exit and risk vibrating the wrong one.
+            return null
+        }
+
+        val candidate = best.single()
+        return candidate.branch.takeIf {
+            candidate.wayMatch || candidate.roadScore >= 82
+        }
+    }
+
+    private data class TargetCandidate(
+        val branch: Branch,
+        val wayMatch: Boolean,
+        val roadScore: Int,
+        val totalScore: Double
+    )
+
+    private fun routeEdgeBearing(
+        routePoints: List<GeoPoint>,
+        center: GeoPoint,
+        last: Boolean
+    ): Double? {
+        if (routePoints.isEmpty()) return null
+        val point = if (last) routePoints.last() else routePoints.first()
+        return bearing(center, point)
+    }
+
+    private fun inferTraversalDirection(routePoints: List<GeoPoint>): Int {
+        if (routePoints.size < 3) return -1
+
+        var total = 0.0
+        for (i in 1 until routePoints.size) {
+            val incoming = bearing(routePoints[i - 1], routePoints[i])
+            val nextIndex = (i + 1).coerceAtMost(routePoints.lastIndex)
+            val outgoing = bearing(routePoints[i], routePoints[nextIndex])
+            val delta = normalizeSigned(outgoing - incoming)
+            if (abs(delta) <= 120.0) total += delta
+        }
+
+        return if (abs(total) >= 10.0 && total > 0.0) 1 else -1
+    }
+
+    private fun traversalDistance(from: Double, to: Double, direction: Int): Double =
+        if (direction < 0) ccwDistance(from, to) else normalizeBearing(to - from)
+
+    private fun normalizeSigned(value: Double): Double {
+        var result = value % 360.0
+        if (result > 180.0) result -= 360.0
+        if (result < -180.0) result += 360.0
+        return result
+    }
+
+    private fun isExcludedUse(edge: RoadEdgeEvidence): Boolean {
+        val use = normalize(edge.use.orEmpty())
+        val classification = normalize(edge.classification.orEmpty())
+        return use == "alley" ||
+            use == "service" ||
+            classification == "service other"
     }
 
     private fun sameWay(
@@ -435,9 +520,9 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
                 val na = normalize(a)
                 val nb = normalize(b)
 
-                na == nb ||
-                    na.contains(nb) ||
-                    nb.contains(na)
+                na.isNotBlank() &&
+                    nb.isNotBlank() &&
+                    (na == nb || na.contains(nb) || nb.contains(na))
             }
         }
     }
@@ -446,16 +531,15 @@ class DefaultRoundaboutResolver : RoundaboutResolver {
         edge: RoadEdgeEvidence,
         center: GeoPoint
     ): Double? {
-        edge.probeBearingDegrees
+        // The correlated point is the actual map-matched road position.
+        // Probe bearing is only a fallback because the probe can snap to a
+        // different nearby carriageway or to the roundabout itself.
+        edge.correlatedPoint
+            ?.let { return bearing(center, it) }
+
+        return edge.probeBearingDegrees
             ?.takeIf { it.isFinite() }
-            ?.let {
-                return normalizeBearing(it)
-            }
-
-        val point =
-            edge.correlatedPoint ?: return null
-
-        return bearing(center, point)
+            ?.let { normalizeBearing(it) }
     }
 
     private fun bearing(

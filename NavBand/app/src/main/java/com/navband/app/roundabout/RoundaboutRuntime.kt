@@ -38,6 +38,11 @@ class RoundaboutRuntime(
             return event
         }
 
+        if (event.roundaboutExit != null) {
+            debug("MAPS EXIT: preserving explicit exit=${event.roundaboutExit}")
+            return event
+        }
+
         val location = lastKnownLocation()
 
         if (location == null) {

@@ -19,7 +19,8 @@ object ImageExtractor {
 
     fun extract(
         context: Context,
-        notification: Notification
+        notification: Notification,
+        onSource: (String) -> Unit = {}
     ): Bitmap? {
 
         try {
@@ -74,6 +75,7 @@ object ImageExtractor {
                             TAG,
                             "RemoteViews SUCCESS: ${bitmap.width}x${bitmap.height}"
                         )
+                        onSource("RemoteViews: ImageView di navigazione")
                         return bitmap
                     } else {
                         Log.d(TAG, "RemoteViews: no matching ImageView found")
@@ -112,6 +114,7 @@ object ImageExtractor {
                                 TAG,
                                 "LARGE_ICON SUCCESS: ${bitmap.width}x${bitmap.height}"
                             )
+                            onSource("Notification.EXTRA_LARGE_ICON")
                         } else {
                             Log.d(TAG, "LARGE_ICON drawable -> bitmap FAILED")
                         }
@@ -139,6 +142,7 @@ object ImageExtractor {
                     TAG,
                     "PICTURE SUCCESS: ${picture.width}x${picture.height}"
                 )
+                onSource("Notification.EXTRA_PICTURE")
                 return picture
             } else {
                 Log.d(
@@ -156,6 +160,7 @@ object ImageExtractor {
         }
 
         Log.d(TAG, "EXTRACT RESULT: NULL")
+        onSource("NESSUNA IMMAGINE DISPONIBILE")
         return null
     }
 

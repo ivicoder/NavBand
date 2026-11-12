@@ -29,7 +29,7 @@ object NavigationDebugLog {
             val file = File(appContext.filesDir, LOG_FILE)
             file.writeText(
                 "=== NAVBAND NAVIGATION SESSION ===\n" +
-                    "START ${timestamp()}\n" +
+                    "START ${timestamp()} elapsed=${android.os.SystemClock.elapsedRealtime()}ms\n" +
                     "Device Android SDK: ${android.os.Build.VERSION.SDK_INT}\n\n",
                 Charsets.UTF_8
             )
@@ -63,7 +63,7 @@ object NavigationDebugLog {
             val safeMessage = message.takeLast(60_000)
             writeLineLocked(
                 appContext,
-                "[${timestamp()}][${component.uppercase(Locale.ROOT)}] $safeMessage"
+                "[${timestamp()}][elapsed=${android.os.SystemClock.elapsedRealtime()}ms][${component.uppercase(Locale.ROOT)}] $safeMessage"
             )
         }
     }

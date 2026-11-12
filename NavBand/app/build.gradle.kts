@@ -12,11 +12,39 @@ android {
         applicationId = "com.navband.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
+        versionCode = providers.gradleProperty("NAVBAND_VERSION_CODE").orElse("1").get().toInt()
         versionName = "1.0"
     }
 
+    // In CI, use the persistent keystore supplied through GitHub Actions secrets.
+    // Local builds without these environment variables continue to use the standard debug key.
+    val stableStorePath = System.getenv("NAVBAND_KEYSTORE_PATH")
+    val stableStorePassword = System.getenv("NAVBAND_KEYSTORE_PASSWORD")
+    val stableKeyAlias = System.getenv("NAVBAND_KEY_ALIAS")
+    val stableKeyPassword = System.getenv("NAVBAND_KEY_PASSWORD")
+
+    signingConfigs {
+        if (
+            !stableStorePath.isNullOrBlank() &&
+            !stableStorePassword.isNullOrBlank() &&
+            !stableKeyAlias.isNullOrBlank() &&
+            !stableKeyPassword.isNullOrBlank()
+        ) {
+            create("stable") {
+                storeFile = file(stableStorePath)
+                storePassword = stableStorePassword
+                keyAlias = stableKeyAlias
+                keyPassword = stableKeyPassword
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (signingConfigs.findByName("stable") != null) {
+                signingConfig = signingConfigs.getByName("stable")
+            }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
