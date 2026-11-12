@@ -75,6 +75,44 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    private val mapsImagesExportLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.CreateDocument("application/zip")
+        ) { uri ->
+            if (uri == null) return@registerForActivityResult
+            try {
+                val files = MapsImageArchive.archiveFiles(this)
+                contentResolver.openOutputStream(uri)?.use { rawOutput ->
+                    java.util.zip.ZipOutputStream(rawOutput).use { zip ->
+                        zip.putNextEntry(java.util.zip.ZipEntry("NavBand_navigazione.txt"))
+                        zip.write(NavigationDebugLog.read(this).toByteArray(Charsets.UTF_8))
+                        zip.closeEntry()
+
+                        files.forEach { file ->
+                            zip.putNextEntry(
+                                java.util.zip.ZipEntry("maps_images/${file.name}")
+                            )
+                            file.inputStream().buffered().use { input ->
+                                input.copyTo(zip)
+                            }
+                            zip.closeEntry()
+                        }
+                    }
+                } ?: throw IllegalStateException("Impossibile creare il file ZIP")
+                Toast.makeText(
+                    this,
+                    "Archivio esportato: ${files.count { it.extension == "png" }} immagini",
+                    Toast.LENGTH_LONG
+                ).show()
+            } catch (error: Exception) {
+                Toast.makeText(
+                    this,
+                    "Errore esportazione immagini: ${error.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
     private val exportLogLauncher =
         registerForActivityResult(
             ActivityResultContracts.CreateDocument("text/plain")
@@ -206,6 +244,15 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Text("Esporta log TXT")
                 }
+            }
+
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    mapsImagesExportLauncher.launch("NavBand_Maps_immagini.zip")
+                }
+            ) {
+                Text("Esporta log + immagini Maps (ZIP)")
             }
 
             Text(
