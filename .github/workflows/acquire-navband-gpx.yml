@@ -1,0 +1,171 @@
+name: Acquire NavBand GPX routes
+
+on:
+  push:
+    branches:
+      - tools/navband-gpx-acquisition
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acquire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Acquire routes and build GPX
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, math, time, urllib.request, urllib.error
+          from xml.etree.ElementTree import Element, SubElement, ElementTree
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          OUT = Path("navband-gpx-output")
+          OUT.mkdir(exist_ok=True)
+          BASES = [
+              "https://router.project-osrm.org/route/v1/driving/",
+              "https://routing.openstreetmap.de/routed-car/route/v1/driving/",
+          ]
+
+          def api(coords, alternatives="false"):
+              path = ";".join(f"{lon:.7f},{lat:.7f}" for lat, lon in coords)
+              query = f"?alternatives={alternatives}&steps=true&geometries=geojson&overview=full"
+              errors = []
+              for base in BASES:
+                  url = base + path + query
+                  try:
+                      req = urllib.request.Request(url, headers={"User-Agent":"NavBand-GPX-Acquisition/1.0"})
+                      with urllib.request.urlopen(req, timeout=35) as response:
+                          data = json.loads(response.read().decode("utf-8"))
+                      if data.get("code") == "Ok" and data.get("routes"):
+                          return data, url, None
+                      errors.append(f"{base}: OSRM code={data.get('code')}")
+                  except Exception as exc:
+                      errors.append(f"{base}: {type(exc).__name__}: {exc}")
+              return None, None, " | ".join(errors)
+
+          routes = []
+          diagnostics = []
+          jobs = [
+              ("GoogleMaps_A_start_to_end", [
+                  (41.0887122,14.3137154),
+                  (41.0543793,14.3313997)
+              ], "3"),
+              ("Historical_B_C_D_roundabout_loop", [
+                  (41.090580,14.317530),
+                  (41.1006487,14.3235474),
+                  (41.095975,14.319169),
+                  (41.095928,14.317027),
+                  (41.090580,14.317530)
+              ], "false"),
+              ("Historical_E", [
+                  (41.06149,14.33815),
+                  (41.0574,14.3413)
+              ], "false"),
+          ]
+
+          def haversine(a,b):
+              R=6371000
+              p1,p2=math.radians(a[0]),math.radians(b[0])
+              dp=math.radians(b[0]-a[0]); dl=math.radians(b[1]-a[1])
+              h=math.sin(dp/2)**2+math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
+              return 2*R*math.asin(math.sqrt(h))
+
+          for name, coords, alt in jobs:
+              data, url, err = api(coords, alt)
+              if not data:
+                  diagnostics.append({"name":name,"status":"FAILED","error":err})
+                  continue
+              snaps = []
+              max_snap = 0
+              for original, wp in zip(coords, data.get("waypoints",[])):
+                  loc = wp.get("location",[])
+                  snap = wp.get("distance",999999)
+                  max_snap = max(max_snap, snap)
+                  snaps.append({"original_lat":original[0],"original_lon":original[1],
+                                "snapped_lon":loc[0] if len(loc)>1 else None,
+                                "snapped_lat":loc[1] if len(loc)>1 else None,
+                                "snap_distance_m":round(snap,1),"road":wp.get("name","")})
+              if max_snap > 100:
+                  diagnostics.append({"name":name,"status":"REJECTED_SNAP_GT_100M",
+                                      "max_snap_m":round(max_snap,1),"snaps":snaps})
+                  continue
+              for idx, route in enumerate(data["routes"],1):
+                  geom = route.get("geometry",{}).get("coordinates",[])
+                  if len(geom) < 10:
+                      diagnostics.append({"name":name,"status":"REJECTED_SHORT_GEOMETRY","points":len(geom)})
+                      continue
+                  trackname = name if len(data["routes"]) == 1 else f"{name}_alternative_{idx}"
+                  steps = []
+                  roundabouts = []
+                  for leg in route.get("legs",[]):
+                      for step in leg.get("steps",[]):
+                          man = step.get("maneuver",{})
+                          entry = {"road":step.get("name",""),"type":man.get("type"),
+                                   "modifier":man.get("modifier"),"exit":man.get("exit"),
+                                   "distance_m":round(step.get("distance",0),1)}
+                          steps.append(entry)
+                          if man.get("type") in ("roundabout","rotary","roundabout turn"):
+                              roundabouts.append(entry)
+                  routes.append({"name":trackname,"geometry":geom,"snaps":snaps,
+                                 "distance_m":round(route.get("distance",0),1),
+                                 "duration_s":round(route.get("duration",0),1),
+                                 "roundabouts":roundabouts,"steps":steps})
+                  diagnostics.append({"name":trackname,"status":"OK",
+                                      "distance_km":round(route.get("distance",0)/1000,2),
+                                      "geometry_points":len(geom),"max_snap_m":round(max_snap,1),
+                                      "roundabout_maneuvers":len(roundabouts),
+                                      "roundabouts":roundabouts,"snaps":snaps})
+              time.sleep(1.1)
+
+          if not routes:
+              (OUT/"diagnostics.json").write_text(json.dumps(diagnostics,indent=2,ensure_ascii=False))
+              raise SystemExit("No valid routes acquired; see diagnostics.json")
+
+          ns="http://www.topografix.com/GPX/1/1"
+          gpx=Element("gpx",{"version":"1.1","creator":"NavBand GPX Acquisition via OSRM",
+                            "xmlns":ns})
+          meta=SubElement(gpx,"metadata")
+          SubElement(meta,"name").text="NavBand - Caserta roundabout image acquisition"
+          SubElement(meta,"desc").text=("Tracks routed on OpenStreetMap road network. "
+              "Each track is a separately routed test; route alternatives are separate tracks. "
+              "Use Google Maps navigation during mock-location replay to capture authentic notification images.")
+          SubElement(meta,"time").text=datetime.now(timezone.utc).isoformat()
+          for route in routes:
+              trk=SubElement(gpx,"trk")
+              SubElement(trk,"name").text=route["name"]
+              SubElement(trk,"desc").text=(f"Distance {route['distance_m']/1000:.2f} km; "
+                  f"OSRM roundabout maneuvers {len(route['roundabouts'])}; "
+                  f"max waypoint snap {max(s['snap_distance_m'] for s in route['snaps']):.1f} m")
+              seg=SubElement(trk,"trkseg")
+              for lon,lat in route["geometry"]:
+                  SubElement(seg,"trkpt",{"lat":f"{lat:.7f}","lon":f"{lon:.7f}"})
+          for d in diagnostics:
+              for s in d.get("snaps",[]):
+                  if s.get("snapped_lat") is not None:
+                      w=SubElement(gpx,"wpt",{"lat":f"{s['snapped_lat']:.7f}","lon":f"{s['snapped_lon']:.7f}"})
+                      SubElement(w,"name").text=f"{d['name']} snap {s['road']}".strip()
+                      SubElement(w,"desc").text=f"Snap distance {s['snap_distance_m']} m from historical coordinate"
+          ElementTree(gpx).write(OUT/"NavBand_Caserta_roundabout_acquisition.gpx",
+                                 encoding="utf-8",xml_declaration=True)
+          (OUT/"diagnostics.json").write_text(json.dumps(diagnostics,indent=2,ensure_ascii=False))
+          summary=["NavBand GPX acquisition report",f"Created: {datetime.now(timezone.utc).isoformat()}",
+                   f"Valid tracks: {len(routes)}",""]
+          for d in diagnostics:
+              summary.append(json.dumps(d,ensure_ascii=False))
+          (OUT/"REPORT.txt").write_text("\n".join(summary)+"\n")
+          print((OUT/"REPORT.txt").read_text())
+          PY
+
+      - name: Upload GPX and acquisition report
+        uses: actions/upload-artifact@v4
+        with:
+          name: NavBand-Caserta-GPX
+          path: navband-gpx-output/
+          if-no-files-found: error
