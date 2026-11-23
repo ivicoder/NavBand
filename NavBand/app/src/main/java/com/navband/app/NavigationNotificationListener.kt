@@ -250,6 +250,12 @@ class NavigationNotificationListener : NotificationListenerService() {
                 onSource = { source -> imageSource = source }
             )
 
+        // EXTRA_LARGE_ICON and EXTRA_PICTURE are notification artwork, not
+        // proof that the bitmap is the maneuver glyph. Only the named Maps
+        // RemoteViews navigation ImageView is eligible for visual inference.
+        val maneuverImage =
+            image.takeIf { imageSource == "RemoteViews: ImageView di navigazione" }
+
         if (image != null && NavigationDebugLog.isSessionActive(this)) {
             val archivedName = MapsImageArchive.save(
                 context = this,
@@ -314,6 +320,9 @@ class NavigationNotificationListener : NotificationListenerService() {
 
         result.append("IMAGE SOURCE\n")
         result.append(imageSource)
+        result.append("\n\n")
+        result.append("MANEUVER ICON ELIGIBLE\n")
+        result.append(if (maneuverImage != null) "YES" else "NO - image retained for debug only")
         result.append("\n\n")
 
         result.append("IMAGE DEBUG\n")
@@ -495,7 +504,7 @@ class NavigationNotificationListener : NotificationListenerService() {
                 title = title,
                 text = text,
                 subText = subText,
-                image = image
+                image = maneuverImage
             ) ?: run {
                 NavigationDebugLog.append(
                     this,
@@ -517,6 +526,18 @@ class NavigationNotificationListener : NotificationListenerService() {
             "PARSER",
             "direction=${parsedEvent.direction}; distance=${parsedEvent.distance}; instruction=${parsedEvent.instruction}; subText=${parsedEvent.subText}; roundaboutExit=${parsedEvent.roundaboutExit}"
         )
+
+        if (
+            parsedEvent.direction == NavigationDirection.UNKNOWN &&
+            image != null &&
+            maneuverImage == null
+        ) {
+            NavigationDebugLog.append(
+                this,
+                "BITMAP_CLASSIFIER",
+                "SKIPPED: image is not a verified Maps maneuver icon; source=$imageSource"
+            )
+        }
 
         val event =
             if (
